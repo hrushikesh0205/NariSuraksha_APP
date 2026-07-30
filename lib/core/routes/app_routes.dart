@@ -36,4 +36,18 @@ abstract final class AppRoutes {
 
   /// App preferences & configuration.
   static const String settings = '/settings';
+
+  // ── Feature Screens ───────────────────────────────────────────────────────────
+
+  /// Emergency contacts management screen.
+  static const String contacts = '/contacts';
+
+  /// Live location tracking / map screen.
+  static const String liveTracking = '/live-tracking';
+
+  /// Safe route planning screen.
+  static const String safeRoute = '/safe-route';
+
+  /// Safety timer screen.
+  static const String safetyTimer = '/safety-timer';
 }

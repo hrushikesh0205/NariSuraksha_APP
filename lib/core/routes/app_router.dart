@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'package:nari_suraksha/core/routes/app_routes.dart';
+import 'package:nari_suraksha/core/theme/app_colors.dart';
+import 'package:nari_suraksha/core/theme/app_text_styles.dart';
 import 'package:nari_suraksha/features/splash/screens/splash_page.dart';
 import 'package:nari_suraksha/features/onboarding/screens/onboarding_screen.dart';
 import 'package:nari_suraksha/features/auth/screens/login_page.dart';
@@ -8,6 +10,7 @@ import 'package:nari_suraksha/features/auth/screens/register_page.dart';
 import 'package:nari_suraksha/features/home/screens/home_page.dart';
 import 'package:nari_suraksha/features/profile/screens/profile_page.dart';
 import 'package:nari_suraksha/features/settings/screens/settings_page.dart';
+import 'package:nari_suraksha/features/emergency_contacts/screens/contacts_screen.dart';
 
 /// Centralised routing authority for Nari Suraksha.
 ///
@@ -65,6 +68,19 @@ abstract final class AppRouter {
 
       case AppRoutes.settings:
         return _build(settings, const SettingsPage());
+
+      // ── Feature screens (Quick Actions) ────────────────────────────────────
+      case AppRoutes.contacts:
+        return _build(settings, const ContactsScreen());
+
+      case AppRoutes.liveTracking:
+        return _build(settings, const _ComingSoonPage(title: 'Live Tracking'));
+
+      case AppRoutes.safeRoute:
+        return _build(settings, const _ComingSoonPage(title: 'Safe Route'));
+
+      case AppRoutes.safetyTimer:
+        return _build(settings, const _ComingSoonPage(title: 'Safety Timer'));
 
       // ── Unknown ─────────────────────────────────────────────────────────────
       default:
@@ -137,6 +153,86 @@ class _NotFoundPage extends StatelessWidget {
                     .pushNamedAndRemoveUntil(AppRoutes.home, (_) => false),
                 icon: const Icon(Icons.home_rounded),
                 label: const Text('Go Home'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Coming Soon placeholder ───────────────────────────────────────────────────
+
+/// Friendly placeholder shown for features not yet implemented.
+class _ComingSoonPage extends StatelessWidget {
+  const _ComingSoonPage({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.primary,
+        foregroundColor: AppColors.onPrimary,
+        title: Text(
+          title,
+          style: AppTextStyles.titleMedium.copyWith(
+            color: AppColors.onPrimary,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        elevation: 0,
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 100,
+                height: 100,
+                decoration: const BoxDecoration(
+                  color: AppColors.primaryContainer,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.construction_rounded,
+                  size: 48,
+                  color: AppColors.primaryDark,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'Coming Soon',
+                style: AppTextStyles.headlineMedium.copyWith(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '$title is under development and will be available in the next update.',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.textSecondary,
+                  height: 1.5,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 32),
+              FilledButton.icon(
+                onPressed: () => Navigator.of(context).pop(),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: AppColors.onPrimary,
+                  shape: const StadiumBorder(),
+                  minimumSize: const Size(160, 48),
+                ),
+                icon: const Icon(Icons.arrow_back_rounded),
+                label: const Text('Go Back'),
               ),
             ],
           ),

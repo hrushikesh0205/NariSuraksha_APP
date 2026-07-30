@@ -1,0 +1,12 @@
+{
+  "_PLACEHOLDER_": "REPLACE THIS FILE with your real google-services.json from Firebase Console",
+  "_INSTRUCTIONS_": [
+    "1. Go to https://console.firebase.google.com",
+    "2. Create a new project OR open your existing Nari Suraksha project",
+    "3. Click 'Add app' → Android",
+    "4. Enter package name: com.narisuraksha.nari_suraksha",
+    "5. Download the google-services.json file",
+    "6. Replace this file with the downloaded google-services.json",
+    "7. Run: flutter pub get && flutter run"
+  ]
+}

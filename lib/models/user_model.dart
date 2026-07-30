@@ -1,0 +1,160 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UserModel
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Represents a registered Nari Suraksha user stored in Firestore.
+///
+/// Firestore path: `users/{uid}`
+///
+/// Design:
+/// - Immutable value object.
+/// - [fromFirestore] for reading from Firestore [DocumentSnapshot].
+/// - [toMap] for writing to Firestore.
+/// - [copyWith] for deriving modified copies without mutation.
+@immutable
+class UserModel {
+  /// Firebase UID — matches [FirebaseAuth.currentUser.uid].
+  final String uid;
+
+  /// Display name (e.g. "Priya Sharma"). Falls back to email prefix.
+  final String name;
+
+  /// Verified email address.
+  final String email;
+
+  /// Optional phone number (E.164 format, e.g. "+919876543210").
+  final String? phone;
+
+  /// Optional URL to the user's profile photo (Firebase Storage or external).
+  final String? photoUrl;
+
+  /// Timestamp when the account was created.
+  final DateTime? createdAt;
+
+  /// Timestamp of the last profile update.
+  final DateTime? updatedAt;
+
+  const UserModel({
+    required this.uid,
+    required this.name,
+    required this.email,
+    this.phone,
+    this.photoUrl,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  // ── Factory constructors ────────────────────────────────────────────────────
+
+  /// Creates a [UserModel] from a Firestore [DocumentSnapshot].
+  factory UserModel.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data() ?? {};
+    return UserModel(
+      uid: doc.id,
+      name: (data['name'] as String?)?.trim().isNotEmpty == true
+          ? data['name'] as String
+          : 'User',
+      email: (data['email'] as String?) ?? '',
+      phone: data['phone'] as String?,
+      photoUrl: data['photoUrl'] as String?,
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
+      updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
+    );
+  }
+
+  /// Creates a [UserModel] from a plain [Map] (e.g. from local cache).
+  factory UserModel.fromMap(Map<String, dynamic> map, {required String uid}) {
+    return UserModel(
+      uid: uid,
+      name: (map['name'] as String?)?.trim().isNotEmpty == true
+          ? map['name'] as String
+          : 'User',
+      email: (map['email'] as String?) ?? '',
+      phone: map['phone'] as String?,
+      photoUrl: map['photoUrl'] as String?,
+      createdAt: map['createdAt'] is Timestamp
+          ? (map['createdAt'] as Timestamp).toDate()
+          : null,
+      updatedAt: map['updatedAt'] is Timestamp
+          ? (map['updatedAt'] as Timestamp).toDate()
+          : null,
+    );
+  }
+
+  // ── Serialisation ───────────────────────────────────────────────────────────
+
+  /// Converts the model to a [Map] suitable for writing to Firestore.
+  Map<String, dynamic> toMap() {
+    return {
+      'name': name,
+      'email': email,
+      if (phone != null) 'phone': phone,
+      if (photoUrl != null) 'photoUrl': photoUrl,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+  }
+
+  /// Produces the initial document map for a brand-new user.
+  Map<String, dynamic> toCreateMap() {
+    return {
+      'name': name,
+      'email': email,
+      if (phone != null) 'phone': phone,
+      if (photoUrl != null) 'photoUrl': photoUrl,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+  }
+
+  // ── Derived helpers ─────────────────────────────────────────────────────────
+
+  /// Returns a [UserModel] with optionally overridden fields.
+  UserModel copyWith({
+    String? uid,
+    String? name,
+    String? email,
+    String? phone,
+    String? photoUrl,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) {
+    return UserModel(
+      uid: uid ?? this.uid,
+      name: name ?? this.name,
+      email: email ?? this.email,
+      phone: phone ?? this.phone,
+      photoUrl: photoUrl ?? this.photoUrl,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  /// Returns the user's first name for greeting display.
+  String get firstName {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    return parts.isNotEmpty ? parts.first : name;
+  }
+
+  /// Returns initials for the avatar fallback (up to 2 chars).
+  String get initials {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.length >= 2) {
+      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    }
+    return name.isNotEmpty ? name[0].toUpperCase() : 'U';
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UserModel && runtimeType == other.runtimeType && uid == other.uid;
+
+  @override
+  int get hashCode => uid.hashCode;
+
+  @override
+  String toString() => 'UserModel(uid: $uid, name: $name, email: $email)';
+}

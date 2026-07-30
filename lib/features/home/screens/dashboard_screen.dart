@@ -1,7 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+
+import 'package:nari_suraksha/core/routes/app_routes.dart';
 import 'package:nari_suraksha/core/theme/app_colors.dart';
 import 'package:nari_suraksha/core/theme/app_text_styles.dart';
 import 'package:nari_suraksha/core/widgets/widgets.dart';
+import 'package:nari_suraksha/models/activity_log_model.dart';
+import 'package:nari_suraksha/providers/dashboard_provider.dart';
+import 'package:nari_suraksha/providers/user_provider.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DashboardScreen
@@ -11,11 +18,14 @@ import 'package:nari_suraksha/core/widgets/widgets.dart';
 ///
 /// Sections (top → bottom):
 ///  1. Gradient header  — time-aware greeting, user name, notification bell, avatar
-///  2. Safety status card  — "You are Safe" (green accent)
+///  2. Safety status card  — live GPS + internet + permission status
 ///  3. Hero SOS button  — large circular button with repeating pulse rings
 ///  4. Quick-actions grid  — 8 features in a 2-column grid with stagger animation
-///  5. Recent alerts placeholder card
+///  5. Recent alerts  — live Firestore stream with beautiful empty state
 ///  6. Daily safety tip card (gradient accent)
+///
+/// All animations, colours, spacing, and typography are preserved from
+/// the original approved UI. Only data sources are wired to Firebase.
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
@@ -38,7 +48,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   // Stagger controller for quick-action grid cards
   late final AnimationController _staggerController;
 
-  static const String _userName = 'Priya'; // placeholder
+  // ── Quick action definitions ────────────────────────────────────────────────
 
   static const List<_QuickAction> _quickActions = [
     _QuickAction(
@@ -46,50 +56,60 @@ class _DashboardScreenState extends State<DashboardScreen>
       label: 'Emergency\nContacts',
       color: AppColors.pastYellowIcon,
       bgColor: AppColors.pastYellow,
+      route: AppRoutes.contacts,
     ),
     _QuickAction(
       icon: Icons.location_on_rounded,
       label: 'Live\nTracking',
       color: AppColors.pastBlueIcon,
       bgColor: AppColors.pastBlue,
+      route: AppRoutes.liveTracking,
     ),
     _QuickAction(
       icon: Icons.route_rounded,
       label: 'Safe\nRoute',
       color: AppColors.pastPurpleIcon,
       bgColor: AppColors.pastPurple,
+      route: AppRoutes.safeRoute,
     ),
     _QuickAction(
       icon: Icons.phone_callback_rounded,
       label: 'Fake\nCall',
       color: AppColors.pastPeachIcon,
       bgColor: AppColors.pastPeach,
+      route: null, // Coming soon
     ),
     _QuickAction(
       icon: Icons.mic_rounded,
       label: 'Voice\nDetection',
       color: AppColors.pastGreenIcon,
       bgColor: AppColors.pastGreen,
+      route: null, // Coming soon
     ),
     _QuickAction(
       icon: Icons.videocam_rounded,
       label: 'Hidden\nCamera',
       color: AppColors.pastMintIcon,
       bgColor: AppColors.pastMint,
+      route: null, // Coming soon
     ),
     _QuickAction(
       icon: Icons.timer_rounded,
       label: 'Safety\nTimer',
       color: AppColors.pastLavenderIcon,
       bgColor: AppColors.pastLavender,
+      route: AppRoutes.safetyTimer,
     ),
     _QuickAction(
       icon: Icons.smart_toy_rounded,
       label: 'AI\nAssistant',
       color: AppColors.pastCyanIcon,
       bgColor: AppColors.pastCyan,
+      route: null, // Coming soon
     ),
   ];
+
+  // ── Safety tips & quotes ────────────────────────────────────────────────────
 
   static const List<String> _safetyTips = [
     'Share your live location with a trusted contact before traveling alone.',
@@ -102,7 +122,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     'Keep a personal alarm or whistle accessible at all times.',
   ];
 
-  /// 15 motivational safety quotes, rotated daily.
   static const List<String> _motivationalQuotes = [
     'Your safety is our highest priority. ✨',
     'Stay aware. Stay confident. 💡',
@@ -135,7 +154,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     _todayTip = _safetyTips[dayOfYear % _safetyTips.length];
     _todayQuote = _motivationalQuotes[dayOfYear % _motivationalQuotes.length];
 
-    // ── Pulse ─────────────────────────────────────────────────────────────────
+    // ── Pulse ──────────────────────────────────────────────────────────────────
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1800),
@@ -148,7 +167,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       CurvedAnimation(parent: _pulseController, curve: Curves.easeOutCubic),
     );
 
-    // ── Entry ────────────────────────────────────────────────────────────────
+    // ── Entry ──────────────────────────────────────────────────────────────────
     _entryController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 700),
@@ -164,7 +183,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       CurvedAnimation(parent: _entryController, curve: Curves.easeOutCubic),
     );
 
-    // ── Stagger ──────────────────────────────────────────────────────────────
+    // ── Stagger ────────────────────────────────────────────────────────────────
     _staggerController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -174,6 +193,13 @@ class _DashboardScreenState extends State<DashboardScreen>
       if (mounted) {
         _entryController.forward();
         _staggerController.forward();
+      }
+    });
+
+    // ── Kick off data loading ──────────────────────────────────────────────────
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<DashboardProvider>().initialize();
       }
     });
   }
@@ -206,24 +232,19 @@ class _DashboardScreenState extends State<DashboardScreen>
           child: CustomScrollView(
             physics: const BouncingScrollPhysics(),
             slivers: [
-              // ── Gradient header ────────────────────────────────────────────
-              SliverToBoxAdapter(child: _buildHeader(cs)),
+              // ── Gradient header ──────────────────────────────────────────────
+              SliverToBoxAdapter(child: _buildHeader()),
 
-              // ── Safety status ──────────────────────────────────────────────
-              const SliverPadding(
-                padding: EdgeInsets.fromLTRB(
+              // ── Safety status ────────────────────────────────────────────────
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(
                     AppSpacing.md, AppSpacing.md, AppSpacing.md, 0),
                 sliver: SliverToBoxAdapter(
-                  child: StatusCard(
-                    icon: Icons.shield_rounded,
-                    title: 'You are Safe',
-                    message: 'No emergency detected.',
-                    variant: StatusVariant.success,
-                  ),
+                  child: _SafetyStatusSection(),
                 ),
               ),
 
-              // ── SOS hero ───────────────────────────────────────────────────
+              // ── SOS hero ─────────────────────────────────────────────────────
               SliverPadding(
                 padding:
                     const EdgeInsets.symmetric(vertical: AppSpacing.xl),
@@ -235,7 +256,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ),
               ),
 
-              // ── Quick actions label ────────────────────────────────────────
+              // ── Quick actions label ──────────────────────────────────────────
               const SliverPadding(
                 padding:
                     EdgeInsets.symmetric(horizontal: AppSpacing.md),
@@ -247,7 +268,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ),
               ),
 
-              // ── Quick actions grid ─────────────────────────────────────────
+              // ── Quick actions grid ───────────────────────────────────────────
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(
                     AppSpacing.md, AppSpacing.sm, AppSpacing.md, 0),
@@ -259,7 +280,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ),
               ),
 
-              // ── Recent alerts label ────────────────────────────────────────
+              // ── Recent alerts label ──────────────────────────────────────────
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(
                     AppSpacing.md, AppSpacing.xl, AppSpacing.md, 0),
@@ -273,16 +294,16 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ),
               ),
 
-              // ── Recent alerts card ─────────────────────────────────────────
+              // ── Recent alerts card ───────────────────────────────────────────
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(
                     AppSpacing.md, AppSpacing.sm, AppSpacing.md, 0),
                 sliver: SliverToBoxAdapter(
-                  child: _RecentAlertsCard(cs: cs),
+                  child: _RecentAlertsSection(cs: cs),
                 ),
               ),
 
-              // ── Daily tip label ────────────────────────────────────────────
+              // ── Daily tip label ──────────────────────────────────────────────
               const SliverPadding(
                 padding: EdgeInsets.fromLTRB(
                     AppSpacing.md, AppSpacing.xl, AppSpacing.md, 0),
@@ -294,7 +315,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ),
               ),
 
-              // ── Daily tip card ─────────────────────────────────────────────
+              // ── Daily tip card ───────────────────────────────────────────────
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(
                     AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.xxl),
@@ -309,17 +330,17 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  // ── Header widget ───────────────────────────────────────────────────────────
+  // ── Header ──────────────────────────────────────────────────────────────────
 
-  Widget _buildHeader(ColorScheme cs) {
+  Widget _buildHeader() {
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            AppColors.primary,      // warm gold
-            AppColors.primaryDark,  // deeper gold
+            AppColors.primary,
+            AppColors.primaryDark,
           ],
         ),
       ),
@@ -337,28 +358,35 @@ class _DashboardScreenState extends State<DashboardScreen>
             children: [
               Row(
                 children: [
-                  // Greeting + name
+                  // Greeting + name — driven by UserProvider
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          '$_greeting,',
-                          style: AppTextStyles.labelLarge.copyWith(
-                            color: AppColors.onPrimary.withValues(alpha: 0.90),
-                            letterSpacing: 0.3,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '$_userName 👋',
-                          style: AppTextStyles.headlineMedium.copyWith(
-                            color: AppColors.onPrimary,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
+                    child: Consumer<UserProvider>(
+                      builder: (_, userProv, __) {
+                        final displayName = userProv.user?.firstName ?? 'User';
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '$_greeting,',
+                              style: AppTextStyles.labelLarge.copyWith(
+                                color: AppColors.onPrimary.withValues(alpha: 0.90),
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            userProv.isLoading
+                                ? _HeaderShimmer()
+                                : Text(
+                                    '$displayName 👋',
+                                    style: AppTextStyles.headlineMedium.copyWith(
+                                      color: AppColors.onPrimary,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                          ],
+                        );
+                      },
                     ),
                   ),
 
@@ -389,24 +417,31 @@ class _DashboardScreenState extends State<DashboardScreen>
 
                   const SizedBox(width: AppSpacing.xs),
 
-                  // Avatar
-                  CircularAvatarWidget(
-                    name: _userName,
-                    radius: 22,
-                    backgroundColor: AppColors.onPrimary.withValues(alpha: 0.2),
-                    foregroundColor: AppColors.onPrimary,
-                    badge: Container(
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: AppColors.success,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: AppColors.primaryDark,
-                          width: 2,
+                  // Avatar — photo URL → network image → initials
+                  Consumer<UserProvider>(
+                    builder: (_, userProv, __) {
+                      final user = userProv.user;
+                      return CircularAvatarWidget(
+                        name: user?.firstName ?? 'U',
+                        imageUrl: user?.photoUrl,
+                        radius: 22,
+                        backgroundColor:
+                            AppColors.onPrimary.withValues(alpha: 0.2),
+                        foregroundColor: AppColors.onPrimary,
+                        badge: Container(
+                          width: 12,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color: AppColors.success,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: AppColors.primaryDark,
+                              width: 2,
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -451,7 +486,134 @@ class _DashboardScreenState extends State<DashboardScreen>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// _SosButton
+// _HeaderShimmer  —  loading placeholder for user name
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _HeaderShimmer extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 26,
+      width: 120,
+      decoration: BoxDecoration(
+        color: AppColors.onPrimary.withValues(alpha: 0.25),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _SafetyStatusSection  —  live GPS / internet / permission status
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _SafetyStatusSection extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<DashboardProvider>(
+      builder: (_, dash, __) {
+        if (dash.isInitializing) {
+          return _StatusShimmer();
+        }
+
+        final status = dash.safetyStatus;
+
+        if (status.isSafe) {
+          return StatusCard(
+            icon: Icons.shield_rounded,
+            title: 'You are Safe',
+            message: 'GPS active · Internet connected · All systems normal.',
+            variant: StatusVariant.success,
+            actionLabel: 'Refresh',
+            onAction: () => dash.refreshSafetyStatus(),
+          );
+        }
+
+        // Build a descriptive warning
+        final issues = <String>[];
+        if (!status.isConnected) issues.add('No internet');
+        if (!status.isLocationEnabled) issues.add('GPS disabled');
+        if (!status.hasLocationPermission) issues.add('Location access denied');
+
+        final lastUpdated = status.lastUpdated != null
+            ? ' · Updated ${DateFormat('HH:mm').format(status.lastUpdated!)}'
+            : '';
+
+        return StatusCard(
+          icon: Icons.warning_amber_rounded,
+          title: 'Safety Check Required',
+          message: '${issues.join(' · ')}$lastUpdated',
+          variant: issues.any((i) => i.contains('GPS') || i.contains('internet'))
+              ? StatusVariant.error
+              : StatusVariant.warning,
+          actionLabel: 'Fix',
+          onAction: () => dash.refreshSafetyStatus(),
+        );
+      },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _StatusShimmer  —  skeleton for safety status card
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _StatusShimmer extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      height: 70,
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+        border: Border(left: BorderSide(color: cs.secondary, width: 4)),
+      ),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: Row(
+        children: [
+          Container(
+            width: 22,
+            height: 22,
+            decoration: BoxDecoration(
+              color: cs.outlineVariant,
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  height: 13,
+                  width: 120,
+                  decoration: BoxDecoration(
+                    color: cs.outlineVariant,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  height: 11,
+                  width: 200,
+                  decoration: BoxDecoration(
+                    color: cs.outlineVariant,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _SosButton  —  Hero SOS with full Firestore integration
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _SosButton extends StatefulWidget {
@@ -473,8 +635,9 @@ class _SosButtonState extends State<_SosButton> {
   static const Color _sosRed = Color(0xFFEF4444);
   static const double _buttonSize = 140;
 
-  void _showConfirmation(BuildContext ctx) {
-    ConfirmationDialog.show(
+  Future<void> _handleSosTap(BuildContext ctx) async {
+    // Show confirmation dialog
+    final confirmed = await ConfirmationDialog.show(
       context: ctx,
       title: 'Send SOS Alert?',
       message:
@@ -483,100 +646,176 @@ class _SosButtonState extends State<_SosButton> {
       isDangerous: true,
       icon: Icons.sos_rounded,
     );
+
+    if (confirmed != true || !ctx.mounted) return;
+
+    // Trigger SOS via provider (location → Firestore → activity log)
+    final dash = ctx.read<DashboardProvider>();
+    final result = await dash.triggerSos();
+
+    if (!ctx.mounted) return;
+
+    if (result.isSuccess) {
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.check_circle_rounded, color: Colors.white),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '🚨 SOS alert sent! Emergency contacts have been notified.',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: AppColors.success,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.md),
+          ),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline_rounded, color: Colors.white),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  result.failureReason ?? 'SOS failed. Please try again.',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.md),
+          ),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        GestureDetector(
-          onTapDown: (_) => setState(() => _pressed = true),
-          onTapUp: (_) {
-            setState(() => _pressed = false);
-            _showConfirmation(context);
-          },
-          onTapCancel: () => setState(() => _pressed = false),
-          child: AnimatedScale(
-            scale: _pressed ? 0.93 : 1.0,
-            duration: const Duration(milliseconds: 120),
-            child: SizedBox(
-              width: _buttonSize + 80,
-              height: _buttonSize + 80,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  // Outer repeating pulse ring
-                  AnimatedBuilder(
-                    animation: widget.pulseScale,
-                    builder: (_, __) => Transform.scale(
-                      scale: widget.pulseScale.value,
-                      child: Opacity(
-                        opacity: widget.pulseOpacity.value,
-                        child: Container(
-                          width: _buttonSize,
-                          height: _buttonSize,
-                          decoration: const BoxDecoration(
-                            color: _sosRed,
-                            shape: BoxShape.circle,
+    return Consumer<DashboardProvider>(
+      builder: (ctx, dash, __) {
+        final isLoading = dash.isSosTriggerLoading;
+
+        return Column(
+          children: [
+            GestureDetector(
+              onTapDown: isLoading ? null : (_) => setState(() => _pressed = true),
+              onTapUp: isLoading
+                  ? null
+                  : (_) {
+                      setState(() => _pressed = false);
+                      _handleSosTap(ctx);
+                    },
+              onTapCancel: () => setState(() => _pressed = false),
+              child: AnimatedScale(
+                scale: _pressed ? 0.93 : 1.0,
+                duration: const Duration(milliseconds: 120),
+                child: SizedBox(
+                  width: _buttonSize + 80,
+                  height: _buttonSize + 80,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // Outer repeating pulse ring
+                      AnimatedBuilder(
+                        animation: widget.pulseScale,
+                        builder: (_, __) => Transform.scale(
+                          scale: widget.pulseScale.value,
+                          child: Opacity(
+                            opacity: widget.pulseOpacity.value,
+                            child: Container(
+                              width: _buttonSize,
+                              height: _buttonSize,
+                              decoration: const BoxDecoration(
+                                color: _sosRed,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ),
-                  // Soft inner glow ring
-                  Container(
-                    width: _buttonSize + 22,
-                    height: _buttonSize + 22,
-                    decoration: BoxDecoration(
-                      color: _sosRed.withValues(alpha: 0.12),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  // Main button
-                  Container(
-                    width: _buttonSize,
-                    height: _buttonSize,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: const RadialGradient(
-                        colors: [Color(0xFFFF6B6B), _sosRed],
-                        stops: [0.3, 1.0],
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: _sosRed.withValues(alpha: 0.45),
-                          blurRadius: 30,
-                          spreadRadius: 4,
+                      // Soft inner glow ring
+                      Container(
+                        width: _buttonSize + 22,
+                        height: _buttonSize + 22,
+                        decoration: BoxDecoration(
+                          color: _sosRed.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
                         ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.sos_rounded,
-                      color: Colors.white,
-                      size: 56,
-                    ),
+                      ),
+                      // Main button
+                      Container(
+                        width: _buttonSize,
+                        height: _buttonSize,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: const RadialGradient(
+                            colors: [Color(0xFFFF6B6B), _sosRed],
+                            stops: [0.3, 1.0],
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _sosRed.withValues(
+                                  alpha: isLoading ? 0.20 : 0.45),
+                              blurRadius: 30,
+                              spreadRadius: 4,
+                            ),
+                          ],
+                        ),
+                        child: isLoading
+                            ? const Padding(
+                                padding: EdgeInsets.all(36),
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 3,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.sos_rounded,
+                                color: Colors.white,
+                                size: 56,
+                              ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
-          ),
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        Text(
-          'Emergency SOS',
-          style: AppTextStyles.titleLarge.copyWith(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Tap only in emergency',
-          style: AppTextStyles.bodySmall.copyWith(
-            color: AppColors.textSecondary,
-          ),
-        ),
-      ],
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'Emergency SOS',
+              style: AppTextStyles.titleLarge.copyWith(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              isLoading ? 'Sending alert...' : 'Tap only in emergency',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -591,12 +830,16 @@ class _QuickAction {
     required this.label,
     required this.color,
     required this.bgColor,
+    this.route,
   });
 
   final IconData icon;
   final String label;
   final Color color;
   final Color bgColor;
+
+  /// Named route to push. `null` = "Coming Soon" sheet.
+  final String? route;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -694,6 +937,93 @@ class _QuickActionTileState extends State<_QuickActionTile>
 
   bool _hovered = false;
 
+  void _handleTap(BuildContext context) {
+    final route = widget.action.route;
+    if (route != null) {
+      Navigator.of(context).pushNamed(route);
+    } else {
+      // Coming Soon — show a friendly bottom sheet
+      _showComingSoon(context, widget.action.label.replaceAll('\n', ' '));
+    }
+  }
+
+  void _showComingSoon(BuildContext context, String featureName) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(AppRadius.xxl),
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Container(
+                width: 68,
+                height: 68,
+                decoration: const BoxDecoration(
+                  color: AppColors.primaryContainer,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.construction_rounded,
+                  size: 34,
+                  color: AppColors.primaryDark,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Text(
+                '$featureName — Coming Soon',
+                style: AppTextStyles.titleLarge.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'This feature is under development and will be available in the next update. Stay tuned!',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.textSecondary,
+                  height: 1.5,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: AppColors.onPrimary,
+                    shape: const StadiumBorder(),
+                    minimumSize: const Size(double.infinity, 48),
+                  ),
+                  child: const Text('Got it'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -716,7 +1046,7 @@ class _QuickActionTileState extends State<_QuickActionTile>
           setState(() => _hovered = false);
           _pressCtrl.reverse();
         },
-        onTap: () {},
+        onTap: () => _handleTap(context),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           decoration: BoxDecoration(
@@ -772,12 +1102,42 @@ class _QuickActionTileState extends State<_QuickActionTile>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// _RecentAlertsCard
+// _RecentAlertsSection  —  live Firestore-backed alerts
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _RecentAlertsCard extends StatelessWidget {
-  const _RecentAlertsCard({required this.cs});
+class _RecentAlertsSection extends StatelessWidget {
+  const _RecentAlertsSection({required this.cs});
 
+  final ColorScheme cs;
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<DashboardProvider>(
+      builder: (_, dash, __) {
+        if (dash.isInitializing) {
+          return _AlertsShimmer(cs: cs);
+        }
+
+        if (dash.alertsErrorMessage != null) {
+          return _AlertsErrorCard(cs: cs, message: dash.alertsErrorMessage!);
+        }
+
+        final alerts = dash.recentAlerts;
+
+        if (alerts.isEmpty) {
+          return _EmptyAlertsCard(cs: cs);
+        }
+
+        return _AlertsListCard(cs: cs, alerts: alerts);
+      },
+    );
+  }
+}
+
+// ── Empty state ───────────────────────────────────────────────────────────────
+
+class _EmptyAlertsCard extends StatelessWidget {
+  const _EmptyAlertsCard({required this.cs});
   final ColorScheme cs;
 
   @override
@@ -819,8 +1179,285 @@ class _RecentAlertsCard extends StatelessWidget {
   }
 }
 
+// ── Alert items list ──────────────────────────────────────────────────────────
+
+class _AlertsListCard extends StatelessWidget {
+  const _AlertsListCard({required this.cs, required this.alerts});
+  final ColorScheme cs;
+  final List<ActivityLogModel> alerts;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+        border: Border.all(color: cs.outlineVariant),
+      ),
+      child: ListView.separated(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: alerts.length,
+        separatorBuilder: (_, __) => Divider(
+          height: 1,
+          color: cs.outlineVariant,
+          indent: AppSpacing.md,
+          endIndent: AppSpacing.md,
+        ),
+        itemBuilder: (_, index) => _AlertItem(
+          log: alerts[index],
+          cs: cs,
+        ),
+      ),
+    );
+  }
+}
+
+class _AlertItem extends StatelessWidget {
+  const _AlertItem({required this.log, required this.cs});
+  final ActivityLogModel log;
+  final ColorScheme cs;
+
+  IconData get _icon => switch (log.type) {
+        ActivityLogType.sosActivated => Icons.sos_rounded,
+        ActivityLogType.locationShared => Icons.location_on_rounded,
+        ActivityLogType.contactAdded => Icons.person_add_rounded,
+        ActivityLogType.timerCompleted => Icons.timer_off_rounded,
+        ActivityLogType.timerStarted => Icons.timer_rounded,
+        ActivityLogType.profileUpdated => Icons.manage_accounts_rounded,
+        ActivityLogType.unknown => Icons.notifications_rounded,
+      };
+
+  Color get _iconColor => switch (log.type) {
+        ActivityLogType.sosActivated => AppColors.error,
+        ActivityLogType.locationShared => AppColors.pastBlueIcon,
+        ActivityLogType.contactAdded => AppColors.pastGreenIcon,
+        ActivityLogType.timerCompleted => AppColors.pastLavenderIcon,
+        ActivityLogType.timerStarted => AppColors.pastYellowIcon,
+        ActivityLogType.profileUpdated => AppColors.pastPurpleIcon,
+        ActivityLogType.unknown => cs.onSurfaceVariant,
+      };
+
+  Color get _bgColor => switch (log.type) {
+        ActivityLogType.sosActivated => AppColors.errorContainer,
+        ActivityLogType.locationShared => AppColors.pastBlue,
+        ActivityLogType.contactAdded => AppColors.pastGreen,
+        ActivityLogType.timerCompleted => AppColors.pastLavender,
+        ActivityLogType.timerStarted => AppColors.pastYellow,
+        ActivityLogType.profileUpdated => AppColors.pastPurple,
+        ActivityLogType.unknown => cs.surfaceContainerHighest,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final timeStr = _formatTime(log.timestamp);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: _bgColor,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+            child: Icon(_icon, color: _iconColor, size: 20),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  log.type.displayLabel,
+                  style: AppTextStyles.titleSmall.copyWith(
+                    color: cs.onSurface,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  log.description,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Text(
+            timeStr,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: cs.onSurfaceVariant,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatTime(DateTime dt) {
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    return DateFormat('MMM d').format(dt);
+  }
+}
+
+// ── Shimmer placeholder ───────────────────────────────────────────────────────
+
+class _AlertsShimmer extends StatelessWidget {
+  const _AlertsShimmer({required this.cs});
+  final ColorScheme cs;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+        border: Border.all(color: cs.outlineVariant),
+      ),
+      child: Column(
+        children: List.generate(3, (i) => _ShimmerRow(cs: cs, isLast: i == 2)),
+      ),
+    );
+  }
+}
+
+class _ShimmerRow extends StatelessWidget {
+  const _ShimmerRow({required this.cs, required this.isLast});
+  final ColorScheme cs;
+  final bool isLast;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: cs.outlineVariant,
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      height: 13,
+                      width: 100,
+                      decoration: BoxDecoration(
+                        color: cs.outlineVariant,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      height: 11,
+                      width: 180,
+                      decoration: BoxDecoration(
+                        color: cs.outlineVariant,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (!isLast)
+          Divider(
+            height: 1,
+            color: cs.outlineVariant,
+            indent: AppSpacing.md,
+            endIndent: AppSpacing.md,
+          ),
+      ],
+    );
+  }
+}
+
+// ── Error state ───────────────────────────────────────────────────────────────
+
+class _AlertsErrorCard extends StatelessWidget {
+  const _AlertsErrorCard({required this.cs, required this.message});
+  final ColorScheme cs;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: cs.errorContainer.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(AppRadius.card),
+        border: Border.all(color: cs.error.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.wifi_off_rounded, color: cs.error, size: 28),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Could not load alerts',
+                  style: AppTextStyles.titleSmall.copyWith(
+                    color: cs.onSurface,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  message,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: () => context.read<DashboardProvider>().refreshAlerts(),
+            child: Text(
+              'Retry',
+              style: AppTextStyles.labelMedium.copyWith(color: cs.error),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// _SafetyTipCard
+// _SafetyTipCard  —  unchanged from original design
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _SafetyTipCard extends StatelessWidget {

@@ -1,4 +1,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- ── Permissions ────────────────────────────────────────────────────── -->
+    <!-- Firebase requires internet access -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Location for SOS, Live Tracking, and Safe Route features -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <!-- Background location for Safety Timer (foreground service) -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+
     <application
         android:label="Nari Suraksha"
         android:name="${applicationName}"
