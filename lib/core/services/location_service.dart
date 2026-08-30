@@ -108,4 +108,12 @@ class LocationService {
   /// Useful for quick location display without waiting for a fresh fix.
   Future<Position?> getLastKnownPosition() =>
       Geolocator.getLastKnownPosition();
+
+  // ── Settings ───────────────────────────────────────────────────────────────
+
+  /// Opens the device's app settings so the user can grant permission manually.
+  Future<bool> openAppSettings() => Geolocator.openAppSettings();
+
+  /// Opens the device's location settings so the user can enable GPS.
+  Future<bool> openLocationSettings() => Geolocator.openLocationSettings();
 }

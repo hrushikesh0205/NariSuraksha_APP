@@ -16,7 +16,9 @@ import 'package:nari_suraksha/models/user_model.dart';
 /// 3. UI rebuilds only the consuming widgets via [Consumer<UserProvider>].
 class UserProvider extends ChangeNotifier {
   UserProvider({AuthService? authService})
-      : _authService = authService ?? AuthService();
+      : _authService = authService ?? AuthService() {
+    _initFromAuth();
+  }
 
   final AuthService _authService;
 
@@ -27,9 +29,24 @@ class UserProvider extends ChangeNotifier {
   String? _errorMessage;
 
   UserModel? get user => _user;
+  String? get currentUid => _user?.uid ?? _authService.firebaseUser?.uid;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
-  bool get hasUser => _user != null;
+  bool get hasUser => _user != null || _authService.firebaseUser != null;
+
+  void _initFromAuth() {
+    final fbUser = _authService.firebaseUser;
+    if (fbUser != null && _user == null) {
+      _user = UserModel(
+        uid: fbUser.uid,
+        name: fbUser.displayName?.isNotEmpty == true
+            ? fbUser.displayName!
+            : (fbUser.email?.split('@').first ?? 'User'),
+        email: fbUser.email ?? '',
+        photoUrl: fbUser.photoURL,
+      );
+    }
+  }
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
@@ -59,6 +76,14 @@ class UserProvider extends ChangeNotifier {
   /// Updates a field locally and optionally syncs to Firestore.
   void updateLocalUser(UserModel updated) {
     _user = updated;
+    notifyListeners();
+  }
+
+  /// Clears the user state, typically called during logout.
+  void clearUser() {
+    _user = null;
+    _errorMessage = null;
+    _isLoading = false;
     notifyListeners();
   }
 

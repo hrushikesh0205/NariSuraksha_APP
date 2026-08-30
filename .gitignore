@@ -44,3 +44,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# google-services.json is intentionally tracked as a STUB placeholder.
+# Replace android/app/google-services.json with the real file from Firebase Console
+# (https://console.firebase.google.com) before production release.
+# Do NOT add it here — the stub must be present for the build to succeed.

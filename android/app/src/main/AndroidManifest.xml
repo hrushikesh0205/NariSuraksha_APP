@@ -6,8 +6,9 @@
     <!-- Location for SOS, Live Tracking, and Safe Route features -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-    <!-- Background location for Safety Timer (foreground service) -->
-    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+    <!-- NOTE: ACCESS_BACKGROUND_LOCATION is intentionally omitted until the
+         Safety Timer foreground service is implemented. Adding it prematurely
+         triggers Play Store review requirements. -->
 
     <application
         android:label="Nari Suraksha"
@@ -36,6 +37,16 @@
             android:value="2" />
     </application>
     <queries>
+        <!-- Required by url_launcher to open the phone dialler on Android 11+ -->
+        <intent>
+            <action android:name="android.intent.action.DIAL"/>
+            <data android:scheme="tel"/>
+        </intent>
+        <!-- Required by url_launcher to open URLs / Maps on Android 11+ -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>

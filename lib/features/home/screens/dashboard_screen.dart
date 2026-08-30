@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
@@ -7,7 +9,9 @@ import 'package:nari_suraksha/core/theme/app_colors.dart';
 import 'package:nari_suraksha/core/theme/app_text_styles.dart';
 import 'package:nari_suraksha/core/widgets/widgets.dart';
 import 'package:nari_suraksha/models/activity_log_model.dart';
+import 'package:nari_suraksha/providers/contact_provider.dart';
 import 'package:nari_suraksha/providers/dashboard_provider.dart';
+import 'package:nari_suraksha/providers/sos_provider.dart';
 import 'package:nari_suraksha/providers/user_provider.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -47,6 +51,10 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   // Stagger controller for quick-action grid cards
   late final AnimationController _staggerController;
+
+  // Periodic timer to keep the greeting fresh
+  late final Timer _greetingTimer;
+  DateTime _now = DateTime.now();
 
   // ── Quick action definitions ────────────────────────────────────────────────
 
@@ -196,6 +204,12 @@ class _DashboardScreenState extends State<DashboardScreen>
       }
     });
 
+    // Refresh the greeting every minute so Good Morning → Good Afternoon
+    // → Good Evening transitions happen live without a restart.
+    _greetingTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() => _now = DateTime.now());
+    });
+
     // ── Kick off data loading ──────────────────────────────────────────────────
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -209,11 +223,12 @@ class _DashboardScreenState extends State<DashboardScreen>
     _pulseController.dispose();
     _entryController.dispose();
     _staggerController.dispose();
+    _greetingTimer.cancel();
     super.dispose();
   }
 
   String get _greeting {
-    final hour = DateTime.now().hour;
+    final hour = _now.hour;
     if (hour < 12) return 'Good Morning';
     if (hour < 17) return 'Good Afternoon';
     return 'Good Evening';
@@ -256,10 +271,19 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ),
               ),
 
+              // ── Dashboard stats row ──────────────────────────────────────────
+              const SliverPadding(
+                padding: EdgeInsets.fromLTRB(
+                    AppSpacing.md, 0, AppSpacing.md, 0),
+                sliver: SliverToBoxAdapter(
+                  child: _DashboardStatsRow(),
+                ),
+              ),
+
               // ── Quick actions label ──────────────────────────────────────────
               const SliverPadding(
-                padding:
-                    EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                padding: EdgeInsets.fromLTRB(
+                    AppSpacing.md, AppSpacing.xl, AppSpacing.md, 0),
                 sliver: SliverToBoxAdapter(
                   child: SectionHeader(
                     title: 'Quick Actions',
@@ -288,7 +312,22 @@ class _DashboardScreenState extends State<DashboardScreen>
                   child: SectionHeader(
                     title: 'Recent Alerts',
                     actionLabel: 'See all',
-                    onAction: () {},
+                    onAction: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: const Text(
+                            'Full activity history coming soon.',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(
+                            borderRadius:
+                                BorderRadius.circular(AppRadius.md),
+                          ),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
                     padding: EdgeInsets.zero,
                   ),
                 ),
@@ -554,6 +593,168 @@ class _SafetyStatusSection extends StatelessWidget {
   }
 }
 
+// ────────────────────────────────────────────────────────────────────────────────
+// _DashboardStatsRow  —  real counts + live status chips
+// ────────────────────────────────────────────────────────────────────────────────
+
+/// Compact row of four stat chips shown between the SOS button and Quick Actions.
+///
+/// Values are driven by:
+/// - Emergency contacts count — [ContactProvider.count]
+/// - SOS activations — [DashboardProvider.sosCount]
+/// - GPS status       — [DashboardProvider.locationStatusLabel]
+/// - Connectivity     — [DashboardProvider.isConnected]
+class _DashboardStatsRow extends StatelessWidget {
+  const _DashboardStatsRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer2<DashboardProvider, ContactProvider>(
+      builder: (_, dash, contacts, __) {
+        final isInit = dash.isInitializing;
+        final cs = Theme.of(context).colorScheme;
+
+        return Row(
+          children: [
+            Expanded(
+              child: _StatChip(
+                icon: Icons.people_rounded,
+                label: 'Contacts',
+                value: isInit ? '…' : '${contacts.count}',
+                color: AppColors.pastBlueIcon,
+                bg: AppColors.pastBlue,
+                cs: cs,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: _StatChip(
+                icon: Icons.sos_rounded,
+                label: 'SOS Sent',
+                value: isInit ? '…' : '${dash.sosCount}',
+                color: AppColors.error,
+                bg: AppColors.errorContainer,
+                cs: cs,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: _StatChip(
+                icon: isInit
+                    ? Icons.location_searching_rounded
+                    : (dash.safetyStatus.isLocationEnabled &&
+                            dash.safetyStatus.hasLocationPermission
+                        ? Icons.location_on_rounded
+                        : Icons.location_off_rounded),
+                label: 'Location',
+                value: isInit ? '…' : dash.locationStatusLabel,
+                color: isInit
+                    ? AppColors.pastPurpleIcon
+                    : (dash.safetyStatus.isLocationEnabled &&
+                            dash.safetyStatus.hasLocationPermission
+                        ? AppColors.pastGreenIcon
+                        : AppColors.warning),
+                bg: isInit
+                    ? AppColors.pastPurple
+                    : (dash.safetyStatus.isLocationEnabled &&
+                            dash.safetyStatus.hasLocationPermission
+                        ? AppColors.pastGreen
+                        : AppColors.warning.withValues(alpha: 0.12)),
+                cs: cs,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: _StatChip(
+                icon: isInit
+                    ? Icons.wifi_find_rounded
+                    : (dash.isConnected
+                        ? Icons.wifi_rounded
+                        : Icons.wifi_off_rounded),
+                label: 'Network',
+                value: isInit
+                    ? '…'
+                    : (dash.isConnected ? 'Online' : 'Offline'),
+                color: isInit
+                    ? AppColors.pastMintIcon
+                    : (dash.isConnected
+                        ? AppColors.pastGreenIcon
+                        : AppColors.error),
+                bg: isInit
+                    ? AppColors.pastMint
+                    : (dash.isConnected
+                        ? AppColors.pastGreen
+                        : AppColors.errorContainer),
+                cs: cs,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// A single compact stat chip used by [_DashboardStatsRow].
+class _StatChip extends StatelessWidget {
+  const _StatChip({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.bg,
+    required this.cs,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+  final Color bg;
+  final ColorScheme cs;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: AppTextStyles.titleSmall.copyWith(
+              color: cs.onSurface,
+              fontWeight: FontWeight.w800,
+              fontSize: 13,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: cs.onSurfaceVariant,
+              fontSize: 10,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // _StatusShimmer  —  skeleton for safety status card
 // ─────────────────────────────────────────────────────────────────────────────
@@ -613,7 +814,7 @@ class _StatusShimmer extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// _SosButton  —  Hero SOS with full Firestore integration
+// _SosButton  —  Hero SOS with full Firestore + SMS integration
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _SosButton extends StatefulWidget {
@@ -632,51 +833,52 @@ class _SosButton extends StatefulWidget {
 class _SosButtonState extends State<_SosButton> {
   bool _pressed = false;
 
+  /// Guards against rapid double-tap firing the SOS twice.
+  bool _isTriggerLocked = false;
+
   static const Color _sosRed = Color(0xFFEF4444);
   static const double _buttonSize = 140;
 
-  Future<void> _handleSosTap(BuildContext ctx) async {
-    // Show confirmation dialog
-    final confirmed = await ConfirmationDialog.show(
-      context: ctx,
-      title: 'Send SOS Alert?',
-      message:
-          'This will immediately alert your emergency contacts and share your live location.',
-      confirmLabel: 'Send SOS',
-      isDangerous: true,
-      icon: Icons.sos_rounded,
-    );
+  /// Full SOS flow triggered by double-tap.
+  ///
+  /// 1. Lock against duplicate triggers.
+  /// 2. Haptic feedback.
+  /// 3. Call [DashboardProvider.triggerSos] (location → Firestore → activity log).
+  /// 4. On success: load the latest SOS doc ID from [SosProvider], show [SosSuccessSheet].
+  /// 5. On failure: show error snackbar.
+  /// 6. Always unlock trigger in finally.
+  Future<void> _handleDoubleTap(BuildContext ctx) async {
+    if (_isTriggerLocked) return;
 
-    if (confirmed != true || !ctx.mounted) return;
+    setState(() => _isTriggerLocked = true);
+    HapticFeedback.heavyImpact();
 
-    // Trigger SOS via provider (location → Firestore → activity log)
     final dash = ctx.read<DashboardProvider>();
     final result = await dash.triggerSos();
 
-    if (!ctx.mounted) return;
+    if (!ctx.mounted) {
+      setState(() => _isTriggerLocked = false);
+      return;
+    }
 
     if (result.isSuccess) {
-      ScaffoldMessenger.of(ctx).showSnackBar(
-        SnackBar(
-          content: const Row(
-            children: [
-              Icon(Icons.check_circle_rounded, color: Colors.white),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  '🚨 SOS alert sent! Emergency contacts have been notified.',
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                ),
-              ),
-            ],
-          ),
-          backgroundColor: AppColors.success,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.md),
-          ),
-          duration: const Duration(seconds: 5),
-        ),
+      // Reload SOS history so we can get the newly-created doc ID.
+      await ctx.read<SosProvider>().loadHistory();
+      if (!ctx.mounted) {
+        setState(() => _isTriggerLocked = false);
+        return;
+      }
+
+      final history = ctx.read<SosProvider>().history;
+      final sosDocId = history.isNotEmpty ? history.first.id : null;
+      final sosTime = DateTime.now();
+
+      await SosSuccessSheet.show(
+        ctx,
+        mapsUrl: result.mapsUrl,
+        sosTime: sosTime,
+        sosDocId: sosDocId,
+        onDone: () {},
       );
     } else {
       ScaffoldMessenger.of(ctx).showSnackBar(
@@ -705,6 +907,8 @@ class _SosButtonState extends State<_SosButton> {
         ),
       );
     }
+
+    setState(() => _isTriggerLocked = false);
   }
 
   @override
@@ -717,13 +921,9 @@ class _SosButtonState extends State<_SosButton> {
           children: [
             GestureDetector(
               onTapDown: isLoading ? null : (_) => setState(() => _pressed = true),
-              onTapUp: isLoading
-                  ? null
-                  : (_) {
-                      setState(() => _pressed = false);
-                      _handleSosTap(ctx);
-                    },
+              onTapUp: isLoading ? null : (_) => setState(() => _pressed = false),
               onTapCancel: () => setState(() => _pressed = false),
+              onDoubleTap: isLoading ? null : () => _handleDoubleTap(ctx),
               child: AnimatedScale(
                 scale: _pressed ? 0.93 : 1.0,
                 duration: const Duration(milliseconds: 120),
@@ -808,7 +1008,7 @@ class _SosButtonState extends State<_SosButton> {
             ),
             const SizedBox(height: 4),
             Text(
-              isLoading ? 'Sending alert...' : 'Tap only in emergency',
+              isLoading ? 'Sending alert…' : 'Double-tap only in emergency',
               style: AppTextStyles.bodySmall.copyWith(
                 color: AppColors.textSecondary,
               ),
@@ -1223,6 +1423,7 @@ class _AlertItem extends StatelessWidget {
         ActivityLogType.sosActivated => Icons.sos_rounded,
         ActivityLogType.locationShared => Icons.location_on_rounded,
         ActivityLogType.contactAdded => Icons.person_add_rounded,
+        ActivityLogType.contactDeleted => Icons.person_remove_rounded,
         ActivityLogType.timerCompleted => Icons.timer_off_rounded,
         ActivityLogType.timerStarted => Icons.timer_rounded,
         ActivityLogType.profileUpdated => Icons.manage_accounts_rounded,
@@ -1233,6 +1434,7 @@ class _AlertItem extends StatelessWidget {
         ActivityLogType.sosActivated => AppColors.error,
         ActivityLogType.locationShared => AppColors.pastBlueIcon,
         ActivityLogType.contactAdded => AppColors.pastGreenIcon,
+        ActivityLogType.contactDeleted => AppColors.error,
         ActivityLogType.timerCompleted => AppColors.pastLavenderIcon,
         ActivityLogType.timerStarted => AppColors.pastYellowIcon,
         ActivityLogType.profileUpdated => AppColors.pastPurpleIcon,
@@ -1243,6 +1445,7 @@ class _AlertItem extends StatelessWidget {
         ActivityLogType.sosActivated => AppColors.errorContainer,
         ActivityLogType.locationShared => AppColors.pastBlue,
         ActivityLogType.contactAdded => AppColors.pastGreen,
+        ActivityLogType.contactDeleted => AppColors.errorContainer,
         ActivityLogType.timerCompleted => AppColors.pastLavender,
         ActivityLogType.timerStarted => AppColors.pastYellow,
         ActivityLogType.profileUpdated => AppColors.pastPurple,

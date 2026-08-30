@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:nari_suraksha/models/user_model.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -9,11 +10,17 @@ import 'package:nari_suraksha/models/user_model.dart';
 ///
 /// All Firestore reads and writes for user documents go through this class.
 /// Business logic is kept in services; this class only handles raw data ops.
+///
+/// Every network call has a [_kTimeout] guard so the UI can never hang
+/// indefinitely if Firestore is slow or the API has not been enabled yet.
 class UserRepository {
   UserRepository({FirebaseFirestore? firestore})
       : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
+
+  /// Maximum time to wait for any single Firestore operation.
+  static const Duration _kTimeout = Duration(seconds: 15);
 
   CollectionReference<Map<String, dynamic>> get _users =>
       _firestore.collection('users');
@@ -23,12 +30,19 @@ class UserRepository {
   /// Fetches the user document for [uid].
   ///
   /// Returns `null` if the document does not exist.
+  /// Throws a descriptive [Exception] on network/permission errors.
   Future<UserModel?> fetchUser(String uid) async {
     try {
-      final doc = await _users.doc(uid).get();
+      final doc = await _users.doc(uid).get().timeout(
+        _kTimeout,
+        onTimeout: () => throw Exception(
+          'Firestore fetchUser timed out after ${_kTimeout.inSeconds}s',
+        ),
+      );
       if (!doc.exists) return null;
       return UserModel.fromFirestore(doc);
     } on FirebaseException catch (e) {
+      debugPrint('🔥 Firestore fetchUser [${e.code}]: ${e.message}');
       throw _mapFirestoreException(e);
     }
   }
@@ -48,8 +62,14 @@ class UserRepository {
   /// Uses [SetOptions(merge: true)] so it won't overwrite an existing doc.
   Future<void> createUser(UserModel user) async {
     try {
-      await _users.doc(user.uid).set(user.toCreateMap(), SetOptions(merge: true));
+      await _users.doc(user.uid).set(user.toCreateMap(), SetOptions(merge: true)).timeout(
+        _kTimeout,
+        onTimeout: () => throw Exception(
+          'Firestore createUser timed out after ${_kTimeout.inSeconds}s',
+        ),
+      );
     } on FirebaseException catch (e) {
+      debugPrint('🔥 Firestore createUser [${e.code}]: ${e.message}');
       throw _mapFirestoreException(e);
     }
   }
@@ -60,8 +80,14 @@ class UserRepository {
       await _users.doc(uid).update({
         ...fields,
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      }).timeout(
+        _kTimeout,
+        onTimeout: () => throw Exception(
+          'Firestore updateUser timed out after ${_kTimeout.inSeconds}s',
+        ),
+      );
     } on FirebaseException catch (e) {
+      debugPrint('🔥 Firestore updateUser [${e.code}]: ${e.message}');
       throw _mapFirestoreException(e);
     }
   }
@@ -71,13 +97,13 @@ class UserRepository {
   Exception _mapFirestoreException(FirebaseException e) {
     switch (e.code) {
       case 'permission-denied':
-        return Exception('Permission denied: ${e.message}');
+        return Exception('firestore/permission-denied: ${e.message}');
       case 'not-found':
-        return Exception('Document not found: ${e.message}');
+        return Exception('firestore/not-found: ${e.message}');
       case 'unavailable':
-        return Exception('Firestore unavailable. Check your connection.');
+        return Exception('firestore/unavailable: Check your connection.');
       default:
-        return Exception('Firestore error [${e.code}]: ${e.message}');
+        return Exception('firestore/${e.code}: ${e.message}');
     }
   }
 }

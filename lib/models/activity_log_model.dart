@@ -13,6 +13,7 @@ enum ActivityLogType {
   sosActivated,
   locationShared,
   contactAdded,
+  contactDeleted,
   timerCompleted,
   timerStarted,
   profileUpdated,
@@ -26,6 +27,8 @@ enum ActivityLogType {
         return ActivityLogType.locationShared;
       case 'contact_added':
         return ActivityLogType.contactAdded;
+      case 'contact_deleted':
+        return ActivityLogType.contactDeleted;
       case 'timer_completed':
         return ActivityLogType.timerCompleted;
       case 'timer_started':
@@ -45,6 +48,8 @@ enum ActivityLogType {
         return 'location_shared';
       case ActivityLogType.contactAdded:
         return 'contact_added';
+      case ActivityLogType.contactDeleted:
+        return 'contact_deleted';
       case ActivityLogType.timerCompleted:
         return 'timer_completed';
       case ActivityLogType.timerStarted:
@@ -64,6 +69,8 @@ enum ActivityLogType {
         return 'Location Shared';
       case ActivityLogType.contactAdded:
         return 'Contact Added';
+      case ActivityLogType.contactDeleted:
+        return 'Contact Deleted';
       case ActivityLogType.timerCompleted:
         return 'Timer Completed';
       case ActivityLogType.timerStarted:

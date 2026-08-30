@@ -2,6 +2,8 @@ plugins {
     id "com.android.application"
     id "kotlin-android"
     id "dev.flutter.flutter-gradle-plugin"
+    // Firebase — Google Services (requires android/app/google-services.json)
+    id "com.google.gms.google-services"
 }
 
 android {
@@ -15,12 +17,13 @@ android {
     }
 
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11
+        jvmTarget = JavaVersion.VERSION_11.toString()
     }
 
     defaultConfig {
         applicationId = "com.narisuraksha.nari_suraksha"
-        minSdk = flutter.minSdkVersion
+        // Firebase Auth & Firestore require minSdk 23+
+        minSdkVersion = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -28,6 +31,7 @@ android {
 
     buildTypes {
         release {
+            // TODO: Add your own signing config for the release build.
             signingConfig = signingConfigs.debug
         }
     }

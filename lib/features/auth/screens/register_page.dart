@@ -1,12 +1,95 @@
 import 'package:flutter/material.dart';
+import 'package:nari_suraksha/core/services/auth_service.dart';
 import 'package:nari_suraksha/core/theme/app_colors.dart';
 import 'package:nari_suraksha/core/theme/app_text_styles.dart';
+import 'package:nari_suraksha/providers/contact_provider.dart';
+import 'package:nari_suraksha/providers/user_provider.dart';
+import 'package:provider/provider.dart';
 
 /// Premium registration screen — bright, warm, friendly.
 ///
-/// Navigation logic untouched: pushes `/home` on success, pops to login.
-class RegisterPage extends StatelessWidget {
+/// Navigation logic: pushes `/home` on success, pops to login.
+class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
+
+  @override
+  State<RegisterPage> createState() => _RegisterPageState();
+}
+
+class _RegisterPageState extends State<RegisterPage> {
+  final _nameCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _passwordCtrl = TextEditingController();
+  final _confirmCtrl = TextEditingController();
+  final _authService = AuthService();
+
+  bool _isLoading = false;
+  String? _errorMessage;
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _phoneCtrl.dispose();
+    _emailCtrl.dispose();
+    _passwordCtrl.dispose();
+    _confirmCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleRegister() async {
+    final name = _nameCtrl.text.trim();
+    final phone = _phoneCtrl.text.trim();
+    final email = _emailCtrl.text.trim();
+    final password = _passwordCtrl.text;
+    final confirm = _confirmCtrl.text;
+
+    // Validation
+    if (name.isEmpty) {
+      setState(() => _errorMessage = 'Please enter your full name.');
+      return;
+    }
+    if (email.isEmpty) {
+      setState(() => _errorMessage = 'Please enter your email address.');
+      return;
+    }
+    if (password.length < 6) {
+      setState(() => _errorMessage = 'Password must be at least 6 characters.');
+      return;
+    }
+    if (password != confirm) {
+      setState(() => _errorMessage = 'Passwords do not match.');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final user = await _authService.registerWithEmailPassword(
+        name: name,
+        email: email,
+        password: password,
+        phone: phone.isEmpty ? null : phone,
+      );
+
+      if (!mounted) return;
+
+      // Seed providers with the newly created user
+      context.read<UserProvider>().updateLocalUser(user);
+      context.read<ContactProvider>().subscribe(user.uid);
+
+      Navigator.pushReplacementNamed(context, '/home');
+    } catch (e, st) {
+      debugPrint('🔥 RegisterPage._handleRegister error: $e\n$st');
+      if (!mounted) return;
+      setState(() => _errorMessage = AuthService.friendlyError(e));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -108,6 +191,7 @@ class RegisterPage extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     _WarmTextField(
+                      controller: _nameCtrl,
                       label: 'Full name',
                       hint: 'Priya Sharma',
                       icon: Icons.person_outline_rounded,
@@ -116,6 +200,7 @@ class RegisterPage extends StatelessWidget {
                     ),
                     const SizedBox(height: AppSpacing.md),
                     _WarmTextField(
+                      controller: _phoneCtrl,
                       label: 'Phone number',
                       hint: '+91 98765 43210',
                       icon: Icons.phone_outlined,
@@ -124,6 +209,7 @@ class RegisterPage extends StatelessWidget {
                     ),
                     const SizedBox(height: AppSpacing.md),
                     _WarmTextField(
+                      controller: _emailCtrl,
                       label: 'Email address',
                       hint: 'you@example.com',
                       icon: Icons.email_outlined,
@@ -132,6 +218,7 @@ class RegisterPage extends StatelessWidget {
                     ),
                     const SizedBox(height: AppSpacing.md),
                     _WarmTextField(
+                      controller: _passwordCtrl,
                       label: 'Password',
                       hint: '••••••••',
                       icon: Icons.lock_outline_rounded,
@@ -140,12 +227,42 @@ class RegisterPage extends StatelessWidget {
                     ),
                     const SizedBox(height: AppSpacing.md),
                     _WarmTextField(
+                      controller: _confirmCtrl,
                       label: 'Confirm password',
                       hint: '••••••••',
                       icon: Icons.lock_reset_rounded,
                       cs: cs,
                       obscure: true,
                     ),
+
+                    // Error message
+                    if (_errorMessage != null) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.sm, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: AppColors.errorContainer.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.error_outline_rounded,
+                                size: 16, color: AppColors.error),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                _errorMessage!,
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: AppColors.error,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
                     const SizedBox(height: AppSpacing.lg),
 
                     // Terms note
@@ -161,11 +278,9 @@ class RegisterPage extends StatelessWidget {
                     const SizedBox(height: AppSpacing.md),
 
                     _GoldButton(
-                      label: 'Create Account',
-                      onPressed: () {
-                        // TODO: implement registration logic, then navigate to home
-                        Navigator.pushReplacementNamed(context, '/home');
-                      },
+                      label: _isLoading ? 'Creating account…' : 'Create Account',
+                      isLoading: _isLoading,
+                      onPressed: _isLoading ? null : _handleRegister,
                     ),
                   ],
                 ),
@@ -206,11 +321,12 @@ class RegisterPage extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Shared local widgets (same as login_page)
+// Shared local widgets (same pattern as login_page)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _WarmTextField extends StatelessWidget {
   const _WarmTextField({
+    required this.controller,
     required this.label,
     required this.hint,
     required this.icon,
@@ -220,6 +336,7 @@ class _WarmTextField extends StatelessWidget {
     this.capitalization = TextCapitalization.none,
   });
 
+  final TextEditingController controller;
   final String label;
   final String hint;
   final IconData icon;
@@ -231,6 +348,7 @@ class _WarmTextField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return TextField(
+      controller: controller,
       obscureText: obscure,
       keyboardType: keyboardType,
       textCapitalization: capitalization,
@@ -266,9 +384,15 @@ class _WarmTextField extends StatelessWidget {
 }
 
 class _GoldButton extends StatelessWidget {
-  const _GoldButton({required this.label, required this.onPressed});
+  const _GoldButton({
+    required this.label,
+    required this.onPressed,
+    this.isLoading = false,
+  });
+
   final String label;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
+  final bool isLoading;
 
   @override
   Widget build(BuildContext context) {
@@ -285,14 +409,23 @@ class _GoldButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(AppRadius.button),
           ),
         ),
-        child: Text(
-          label,
-          style: AppTextStyles.labelLarge.copyWith(
-            color: AppColors.onPrimary,
-            fontWeight: FontWeight.w700,
-            fontSize: 16,
-          ),
-        ),
+        child: isLoading
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  color: Colors.white,
+                ),
+              )
+            : Text(
+                label,
+                style: AppTextStyles.labelLarge.copyWith(
+                  color: AppColors.onPrimary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                ),
+              ),
       ),
     );
   }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:nari_suraksha/core/services/auth_service.dart';
 import 'package:nari_suraksha/core/services/connectivity_service.dart';
@@ -8,6 +10,7 @@ import 'package:nari_suraksha/providers/user_provider.dart';
 import 'package:nari_suraksha/repositories/activity_repository.dart';
 import 'package:nari_suraksha/repositories/sos_repository.dart';
 import 'package:geolocator/geolocator.dart';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // SafetyStatus
 // ─────────────────────────────────────────────────────────────────────────────
@@ -44,7 +47,9 @@ class SafetyStatus {
 ///
 /// Manages:
 /// - [SafetyStatus] — real GPS, permission, and internet state.
-/// - Recent activity logs stream subscription.
+///   Auto-updates via a [ConnectivityService.onConnectivityChanged] stream
+///   so the status card reacts within seconds of WiFi being toggled.
+/// - Recent activity logs via real-time Firestore stream.
 /// - SOS trigger flow (location → Firestore write → activity log).
 /// - Loading / error states for each section independently.
 class DashboardProvider extends ChangeNotifier {
@@ -78,12 +83,34 @@ class DashboardProvider extends ChangeNotifier {
   String? _sosErrorMessage;
   String? _alertsErrorMessage;
 
+  /// Real-time subscription for recent activity logs.
+  StreamSubscription<List<ActivityLogModel>>? _alertsSub;
+
+  /// Live connectivity subscription — auto-refreshes safety status on change.
+  StreamSubscription<bool>? _connectivitySub;
+
   SafetyStatus get safetyStatus => _safetyStatus;
   List<ActivityLogModel> get recentAlerts => _recentAlerts;
   bool get isInitializing => _isInitializing;
   bool get isSosTriggerLoading => _isSosTriggerLoading;
   String? get sosErrorMessage => _sosErrorMessage;
   String? get alertsErrorMessage => _alertsErrorMessage;
+
+  // ── Computed stats ─────────────────────────────────────────────────────────
+
+  /// Number of SOS events in the current recent-alert window.
+  int get sosCount =>
+      _recentAlerts.where((a) => a.type == ActivityLogType.sosActivated).length;
+
+  /// Human-readable location status label for the stats row.
+  String get locationStatusLabel {
+    if (!_safetyStatus.isLocationEnabled) return 'Location Disabled';
+    if (!_safetyStatus.hasLocationPermission) return 'Permission Required';
+    return 'Location Ready';
+  }
+
+  /// Whether the device currently has internet connectivity.
+  bool get isConnected => _safetyStatus.isConnected;
 
   // ── Initialization ─────────────────────────────────────────────────────────
 
@@ -96,9 +123,15 @@ class DashboardProvider extends ChangeNotifier {
 
     await Future.wait([
       _refreshSafetyStatus(),
-      _loadRecentAlerts(),
       if (_userProvider != null) _userProvider.loadUser(),
     ]);
+
+    // Start real-time stream for recent alerts.
+    _subscribeToAlerts();
+
+    // Subscribe to connectivity changes so the status card auto-updates
+    // when the user toggles WiFi / mobile data mid-session.
+    _subscribeToConnectivity();
 
     _isInitializing = false;
     notifyListeners();
@@ -127,6 +160,20 @@ class DashboardProvider extends ChangeNotifier {
 
   Future<void> refreshSafetyStatus() => _refreshSafetyStatus();
 
+  // ── Live connectivity subscription ─────────────────────────────────────────
+
+  /// Subscribes to connectivity changes. When connectivity toggles,
+  /// immediately re-checks the full safety status so the card stays accurate.
+  void _subscribeToConnectivity() {
+    _connectivitySub?.cancel();
+    _connectivitySub =
+        _connectivityService.onConnectivityChanged.listen((_) async {
+      // Re-evaluate the full status (not just connectivity) so all
+      // three indicators update atomically.
+      await _refreshSafetyStatus();
+    });
+  }
+
   // ── SOS Trigger ────────────────────────────────────────────────────────────
 
   /// Full SOS flow: get location → write Firestore → log activity.
@@ -147,7 +194,10 @@ class DashboardProvider extends ChangeNotifier {
       Position? position;
       try {
         position = await _locationService.getCurrentPosition();
-      } catch (_) {
+      } catch (e) {
+        debugPrint(
+          '⚠️ DashboardProvider: fresh location failed, trying last-known: $e',
+        );
         position = await _locationService.getLastKnownPosition();
       }
 
@@ -173,8 +223,10 @@ class DashboardProvider extends ChangeNotifier {
             : 'SOS triggered — location unavailable',
       );
 
-      // 4. Refresh alerts list
-      await _loadRecentAlerts();
+      // Refresh safety status after SOS so location permission state updates.
+      unawaited(_refreshSafetyStatus());
+
+      // Stream will auto-update recent alerts — no manual reload needed.
 
       return SosTriggerResult.success(lat, lng);
     } catch (e) {
@@ -188,39 +240,49 @@ class DashboardProvider extends ChangeNotifier {
     }
   }
 
-  // ── Recent Alerts ──────────────────────────────────────────────────────────
+  // ── Recent Alerts — real-time stream ───────────────────────────────────────
 
-  Future<void> _loadRecentAlerts() async {
+  void _subscribeToAlerts() {
     final uid = _authService.firebaseUser?.uid;
     if (uid == null) {
       _recentAlerts = [];
+      _alertsErrorMessage = null;
       notifyListeners();
       return;
     }
 
-    try {
-      _recentAlerts = await _activityRepository.getRecentActivity(
-        uid,
-        limit: 10,
-      );
-      _alertsErrorMessage = null;
-    } catch (e) {
-      _alertsErrorMessage = _friendlyError(e);
-      _recentAlerts = [];
-    }
-    notifyListeners();
+    // Cancel any existing subscription before creating a new one.
+    _alertsSub?.cancel();
+    _alertsSub = _activityRepository
+        .watchRecentActivity(uid, limit: 10)
+        .listen(
+      (list) {
+        _recentAlerts = list;
+        _alertsErrorMessage = null;
+        notifyListeners();
+      },
+      onError: (Object e) {
+        _alertsErrorMessage = _friendlyError(e);
+        _recentAlerts = [];
+        notifyListeners();
+      },
+    );
   }
 
-  Future<void> refreshAlerts() => _loadRecentAlerts();
+  /// Force-restarts the real-time alert subscription (e.g. after retry tap).
+  void refreshAlerts() => _subscribeToAlerts();
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   String _friendlyError(Object e) {
     final msg = e.toString().toLowerCase();
-    if (msg.contains('network') || msg.contains('unavailable')) {
-      return 'No internet connection. Please check your network.';
+    if (msg.contains('network') || msg.contains('unavailable') || msg.contains('offline')) {
+      return 'You are offline. Please check your internet connection.';
     }
-    if (msg.contains('location service')) {
+    if (msg.contains('permission-denied') || msg.contains('permission_denied')) {
+      return 'Firestore permission denied. Please contact support.';
+    }
+    if (msg.contains('location service') || msg.contains('location disabled')) {
       return 'Location services are disabled. Please enable GPS.';
     }
     if (msg.contains('permission')) {
@@ -230,6 +292,13 @@ class DashboardProvider extends ChangeNotifier {
       return 'Location timed out. SOS sent without precise location.';
     }
     return 'Something went wrong. Please try again.';
+  }
+
+  @override
+  void dispose() {
+    _alertsSub?.cancel();
+    _connectivitySub?.cancel();
+    super.dispose();
   }
 }
 
@@ -260,6 +329,16 @@ class _SosFailure extends SosTriggerResult {
 
 extension SosTriggerResultX on SosTriggerResult {
   bool get isSuccess => this is _SosSuccess;
+
   String? get failureReason =>
       this is _SosFailure ? (this as _SosFailure).reason : null;
+
+  /// Google Maps URL for the triggered location (null if this is a failure).
+  String? get mapsUrl {
+    if (this is _SosSuccess) {
+      final s = this as _SosSuccess;
+      return 'https://maps.google.com/?q=${s.latitude},${s.longitude}';
+    }
+    return null;
+  }
 }

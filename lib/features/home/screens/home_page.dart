@@ -4,6 +4,9 @@ import 'package:nari_suraksha/features/home/screens/dashboard_screen.dart';
 import 'package:nari_suraksha/features/sos/screens/sos_screen.dart';
 import 'package:nari_suraksha/features/emergency_contacts/screens/contacts_screen.dart';
 import 'package:nari_suraksha/features/profile/screens/profile_page.dart';
+import 'package:nari_suraksha/providers/contact_provider.dart';
+import 'package:nari_suraksha/providers/user_provider.dart';
+import 'package:provider/provider.dart';
 
 /// Home / Dashboard shell for authenticated users.
 ///
@@ -19,6 +22,24 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
+
+  /// Called by child screens (e.g. SosScreen) to switch the active tab.
+  void switchToTab(int index) {
+    setState(() => _selectedIndex = index);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Subscribe ContactProvider to current user's contacts on mount.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final uid = context.read<UserProvider>().currentUid;
+      if (uid != null) {
+        context.read<ContactProvider>().subscribe(uid);
+      }
+    });
+  }
 
   static const List<_TabItem> _tabs = [
     _TabItem(
@@ -48,30 +69,48 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       body: IndexedStack(
         index: _selectedIndex,
-        children: const [
+        children: [
           // Tab 0 — Dashboard
-          DashboardScreen(),
-          // Tab 1 — SOS screen
-          SosScreen(),
+          const DashboardScreen(),
+          // Tab 1 — SOS screen (passes onSosSuccess to return to Dashboard)
+          SosScreen(onSosSuccess: () => switchToTab(0)),
           // Tab 2 — Emergency contacts
-          ContactsScreen(),
+          const ContactsScreen(),
           // Tab 3 — Profile
-          ProfilePage(),
+          const ProfilePage(),
         ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
+        backgroundColor: Colors.white,
+        indicatorColor: AppColors.primaryContainer,
         onDestinationSelected: (index) =>
             setState(() => _selectedIndex = index),
-        destinations: _tabs
-            .map(
-              (t) => NavigationDestination(
-                icon: Icon(t.icon),
-                selectedIcon: Icon(t.activeIcon, color: AppColors.primary),
-                label: t.label,
-              ),
-            )
-            .toList(growable: false),
+        destinations: [
+          NavigationDestination(
+            icon: Icon(_tabs[0].icon),
+            selectedIcon: Icon(_tabs[0].activeIcon, color: AppColors.primary),
+            label: _tabs[0].label,
+          ),
+          // SOS tab gets a distinct red colour to signal urgency
+          NavigationDestination(
+            icon: const Icon(Icons.gpp_maybe_outlined,
+                color: Color(0xFFEF4444)),
+            selectedIcon: const Icon(Icons.gpp_maybe_rounded,
+                color: Color(0xFFEF4444)),
+            label: _tabs[1].label,
+          ),
+          NavigationDestination(
+            icon: Icon(_tabs[2].icon),
+            selectedIcon: Icon(_tabs[2].activeIcon, color: AppColors.primary),
+            label: _tabs[2].label,
+          ),
+          NavigationDestination(
+            icon: Icon(_tabs[3].icon),
+            selectedIcon: Icon(_tabs[3].activeIcon, color: AppColors.primary),
+            label: _tabs[3].label,
+          ),
+        ],
       ),
     );
   }

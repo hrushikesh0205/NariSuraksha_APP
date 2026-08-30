@@ -31,6 +31,23 @@ class UserModel {
   /// Optional URL to the user's profile photo (Firebase Storage or external).
   final String? photoUrl;
 
+  // ── Medical Information ─────────────────────────────────────────────────────
+
+  /// Blood group, e.g. "B+" or "O-". Empty string if not set.
+  final String bloodGroup;
+
+  /// Comma-separated allergy list (as a single string for simplicity).
+  final String allergies;
+
+  /// Comma-separated medical conditions.
+  final String conditions;
+
+  /// Comma-separated current medications.
+  final String medications;
+
+  /// Optional user settings and preferences.
+  final Map<String, dynamic> settings;
+
   /// Timestamp when the account was created.
   final DateTime? createdAt;
 
@@ -43,6 +60,11 @@ class UserModel {
     required this.email,
     this.phone,
     this.photoUrl,
+    this.bloodGroup = '',
+    this.allergies = '',
+    this.conditions = '',
+    this.medications = '',
+    this.settings = const {},
     this.createdAt,
     this.updatedAt,
   });
@@ -60,6 +82,11 @@ class UserModel {
       email: (data['email'] as String?) ?? '',
       phone: data['phone'] as String?,
       photoUrl: data['photoUrl'] as String?,
+      bloodGroup: (data['bloodGroup'] as String?) ?? '',
+      allergies: (data['allergies'] as String?) ?? '',
+      conditions: (data['conditions'] as String?) ?? '',
+      medications: (data['medications'] as String?) ?? '',
+      settings: (data['settings'] as Map<String, dynamic>?) ?? const {},
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
     );
@@ -75,6 +102,11 @@ class UserModel {
       email: (map['email'] as String?) ?? '',
       phone: map['phone'] as String?,
       photoUrl: map['photoUrl'] as String?,
+      bloodGroup: (map['bloodGroup'] as String?) ?? '',
+      allergies: (map['allergies'] as String?) ?? '',
+      conditions: (map['conditions'] as String?) ?? '',
+      medications: (map['medications'] as String?) ?? '',
+      settings: (map['settings'] as Map<String, dynamic>?) ?? const {},
       createdAt: map['createdAt'] is Timestamp
           ? (map['createdAt'] as Timestamp).toDate()
           : null,
@@ -93,6 +125,11 @@ class UserModel {
       'email': email,
       if (phone != null) 'phone': phone,
       if (photoUrl != null) 'photoUrl': photoUrl,
+      'bloodGroup': bloodGroup,
+      'allergies': allergies,
+      'conditions': conditions,
+      'medications': medications,
+      'settings': settings,
       'updatedAt': FieldValue.serverTimestamp(),
     };
   }
@@ -104,6 +141,11 @@ class UserModel {
       'email': email,
       if (phone != null) 'phone': phone,
       if (photoUrl != null) 'photoUrl': photoUrl,
+      'bloodGroup': bloodGroup,
+      'allergies': allergies,
+      'conditions': conditions,
+      'medications': medications,
+      'settings': settings,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     };
@@ -118,6 +160,11 @@ class UserModel {
     String? email,
     String? phone,
     String? photoUrl,
+    String? bloodGroup,
+    String? allergies,
+    String? conditions,
+    String? medications,
+    Map<String, dynamic>? settings,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -127,6 +174,11 @@ class UserModel {
       email: email ?? this.email,
       phone: phone ?? this.phone,
       photoUrl: photoUrl ?? this.photoUrl,
+      bloodGroup: bloodGroup ?? this.bloodGroup,
+      allergies: allergies ?? this.allergies,
+      conditions: conditions ?? this.conditions,
+      medications: medications ?? this.medications,
+      settings: settings ?? this.settings,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

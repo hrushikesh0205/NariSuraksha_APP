@@ -1,0 +1,46 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ──────────────────────────────────────────────────────
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // ── Users collection & Contacts subcollection ────────────────────────────
+    // Path: /users/{userId}
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+
+      // Subcollection: /users/{userId}/contacts/{contactId}
+      // Firestore security rules DO NOT cascade automatically to subcollections.
+      // This explicit rule grants authenticated users read & write access
+      // ONLY to their own emergency contacts subcollection.
+      match /contacts/{contactId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // ── Activity Logs collection ─────────────────────────────────────────────
+    // Path: /activity_logs/{logId}
+    match /activity_logs/{logId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    // ── SOS History collection ───────────────────────────────────────────────
+    // Path: /sos_history/{sosId}
+    match /sos_history/{sosId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+  }
+}
