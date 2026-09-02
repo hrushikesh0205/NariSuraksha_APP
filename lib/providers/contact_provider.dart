@@ -44,6 +44,22 @@ class ContactProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   bool get hasReachedLimit => _contacts.length >= 5;
 
+  /// Returns all High Priority contacts (T = 0 immediate alert).
+  List<EmergencyContact> get highPriorityContacts =>
+      _contacts.where((c) => c.priority == ContactPriority.high).toList();
+
+  /// Returns all Medium Priority contacts (T = 2 min escalation).
+  List<EmergencyContact> get mediumPriorityContacts =>
+      _contacts.where((c) => c.priority == ContactPriority.medium).toList();
+
+  /// Returns all Low Priority contacts (T = 5 min escalation).
+  List<EmergencyContact> get lowPriorityContacts =>
+      _contacts.where((c) => c.priority == ContactPriority.low).toList();
+
+  /// Returns all contacts matching a given [priority].
+  List<EmergencyContact> contactsByPriority(ContactPriority priority) =>
+      _contacts.where((c) => c.priority == priority).toList();
+
   // ── Subscription ────────────────────────────────────────────────────────────
 
   /// Starts listening to the contact stream for [uid].
@@ -96,6 +112,7 @@ class ContactProvider extends ChangeNotifier {
     required String name,
     required String phone,
     required String relation,
+    ContactPriority priority = ContactPriority.high,
   }) async {
     _isSaving = true;
     notifyListeners();
@@ -105,12 +122,13 @@ class ContactProvider extends ChangeNotifier {
         name: name.trim(),
         phone: phone.trim(),
         relation: relation.trim(),
+        priority: priority,
       );
       await _contactRepo.addContact(uid, contact);
       await _activityRepo.logActivity(
         uid: uid,
         type: ActivityLogType.contactAdded,
-        description: 'Emergency contact "${name.trim()}" was added.',
+        description: 'Emergency contact "${name.trim()}" (${priority.displayLabel}) was added.',
       );
       return null; // success
     } on ContactLimitException catch (e) {
@@ -156,25 +174,48 @@ class ContactProvider extends ChangeNotifier {
 
   // ── DELETE ──────────────────────────────────────────────────────────────────
 
-  /// Permanently deletes a contact.
+  /// Permanently deletes a contact after Firestore deletion completes.
   ///
   /// Returns `null` on success, or an error string.
   Future<String?> deleteContact({
     required String uid,
     required EmergencyContact contact,
   }) async {
+    final id = contact.id;
+    if (id == null || id.isEmpty) {
+      debugPrint('[ContactProvider] deleteContact error: contact.id is null or empty');
+      return 'Cannot delete contact: missing contact ID.';
+    }
+
     _isSaving = true;
+    _errorMessage = null;
     notifyListeners();
+
     try {
-      await _contactRepo.deleteContact(uid, contact.id!);
+      debugPrint('[ContactProvider] Initiating deletion for contact "${contact.name}" (ID: $id) for user $uid');
+      // 1. Delete document from Firestore first (wait for successful completion)
+      await _contactRepo.deleteContact(uid, id);
+
+      // 2. Update local provider state only after Firestore delete succeeds
+      _contacts = _contacts.where((c) => c.id != id).toList();
+
+      // 3. Log activity
       await _activityRepo.logActivity(
         uid: uid,
         type: ActivityLogType.contactDeleted,
         description: 'Emergency contact "${contact.name}" was removed.',
       );
+
+      debugPrint('[ContactProvider] Deletion complete. Remaining contacts: ${_contacts.length}');
+      notifyListeners();
       return null;
     } catch (e) {
-      return _friendlyError(e);
+      debugPrint('[ContactProvider] Deletion aborted due to error: $e');
+      final errorMsg = _friendlyError(e);
+      _errorMessage = errorMsg;
+      // Do not remove contact from _contacts list if deletion failed
+      notifyListeners();
+      return errorMsg;
     } finally {
       _isSaving = false;
       notifyListeners();
@@ -188,37 +229,38 @@ class ContactProvider extends ChangeNotifier {
 
     // ── Handle Firestore-specific error codes directly ──────────────────────
     if (e is FirebaseException) {
-      debugPrint('🔥 [ContactProvider] FirebaseException code: ${e.code}');
+      debugPrint('🔥 [ContactProvider] FirebaseException code: ${e.code}, message: ${e.message}');
       switch (e.code) {
         case 'unauthenticated':
           return 'You are not signed in. Please sign in again.';
         case 'permission-denied':
-          return 'Firestore permission denied. Please contact support.';
+          return 'Firestore permission denied (${e.code}). Please verify Firestore security rules on Firebase Console.';
         case 'unavailable':
         case 'resource-exhausted':
           return 'You are offline. Please check your internet connection.';
         case 'not-found':
-          return 'The requested data was not found.';
+          return 'The requested contact document was not found in Firestore.';
         case 'deadline-exceeded':
           return 'The request timed out. Please try again.';
         default:
-          return 'Something went wrong (${e.code}). Please try again.';
+          return 'Firestore error [${e.code}]: ${e.message ?? 'Unknown error'}';
       }
     }
 
     // ── String-based fallback for wrapped/rethrown errors ───────────────────
-    final msg = e.toString().toLowerCase();
-    debugPrint('🔥 [ContactProvider] _friendlyError mapping: $msg');
-    if (msg.contains('unauthenticated') || msg.contains('not signed in')) {
+    final msg = e.toString();
+    final lower = msg.toLowerCase();
+    debugPrint('🔥 [ContactProvider] _friendlyError fallback mapping: $lower');
+    if (lower.contains('unauthenticated') || lower.contains('not signed in')) {
       return 'You are not signed in. Please sign in again.';
     }
-    if (msg.contains('network') || msg.contains('unavailable') || msg.contains('offline')) {
+    if (lower.contains('network') || lower.contains('unavailable') || lower.contains('offline')) {
       return 'You are offline. Please check your internet connection.';
     }
-    if (msg.contains('permission-denied') || msg.contains('permission_denied')) {
-      return 'Firestore permission denied. Please contact support.';
+    if (lower.contains('permission-denied') || lower.contains('permission_denied')) {
+      return 'Firestore permission denied. Please verify Firestore security rules on Firebase Console.';
     }
-    return 'Something went wrong. Please try again.';
+    return msg.replaceFirst(RegExp(r'^Exception:\s*'), '');
   }
 
   @override

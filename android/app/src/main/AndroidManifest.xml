@@ -6,6 +6,8 @@
     <!-- Location for SOS, Live Tracking, and Safe Route features -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <!-- Voice SOS emergency keyword detection -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <!-- NOTE: ACCESS_BACKGROUND_LOCATION is intentionally omitted until the
          Safety Timer foreground service is implemented. Adding it prematurely
          triggers Play Store review requirements. -->
@@ -46,6 +48,10 @@
         <intent>
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="https"/>
+        </intent>
+        <!-- Required by speech_to_text for speech recognition on Android 11+ -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
         </intent>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>

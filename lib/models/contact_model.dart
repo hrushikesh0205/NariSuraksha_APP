@@ -2,6 +2,80 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ContactPriority
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Priority level for an emergency contact determining alert timing during SOS escalation.
+enum ContactPriority {
+  /// Immediate alert upon SOS trigger (T = 0).
+  high,
+
+  /// Escalated alert if emergency is unresolved after 2 minutes (T = 2 min).
+  medium,
+
+  /// Escalated alert if emergency is unresolved after 5 minutes (T = 5 min).
+  low;
+
+  static ContactPriority fromString(String? value) {
+    switch (value?.toLowerCase()) {
+      case 'medium':
+        return ContactPriority.medium;
+      case 'low':
+        return ContactPriority.low;
+      case 'high':
+      default:
+        return ContactPriority.high;
+    }
+  }
+
+  String get value => name; // 'high' | 'medium' | 'low'
+
+  String get displayLabel {
+    switch (this) {
+      case ContactPriority.high:
+        return 'High Priority';
+      case ContactPriority.medium:
+        return 'Medium Priority';
+      case ContactPriority.low:
+        return 'Low Priority';
+    }
+  }
+
+  String get timingLabel {
+    switch (this) {
+      case ContactPriority.high:
+        return 'Immediate Alert';
+      case ContactPriority.medium:
+        return 'Alert after 2 min';
+      case ContactPriority.low:
+        return 'Alert after 5 min';
+    }
+  }
+
+  String get shortLabel {
+    switch (this) {
+      case ContactPriority.high:
+        return 'High';
+      case ContactPriority.medium:
+        return 'Medium';
+      case ContactPriority.low:
+        return 'Low';
+    }
+  }
+
+  int get escalationMinutes {
+    switch (this) {
+      case ContactPriority.high:
+        return 0;
+      case ContactPriority.medium:
+        return 2;
+      case ContactPriority.low:
+        return 5;
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // EmergencyContact
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -27,6 +101,9 @@ class EmergencyContact {
   /// Relationship label (e.g. "Mother", "Father", "Best Friend").
   final String relation;
 
+  /// Alert priority determining when this contact is notified during escalation.
+  final ContactPriority priority;
+
   /// When this contact was first added.
   final DateTime? createdAt;
 
@@ -36,6 +113,7 @@ class EmergencyContact {
     required this.name,
     required this.phone,
     this.relation = '',
+    this.priority = ContactPriority.high,
     this.createdAt,
   });
 
@@ -51,6 +129,7 @@ class EmergencyContact {
       name: (data['name'] as String?) ?? '',
       phone: (data['phone'] as String?) ?? '',
       relation: (data['relation'] as String?) ?? '',
+      priority: ContactPriority.fromString(data['priority'] as String?),
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
     );
   }
@@ -64,6 +143,7 @@ class EmergencyContact {
       'name': name.trim(),
       'phone': phone.trim(),
       'relation': relation.trim(),
+      'priority': priority.value,
       'updatedAt': FieldValue.serverTimestamp(),
     };
   }
@@ -75,6 +155,7 @@ class EmergencyContact {
       'name': name.trim(),
       'phone': phone.trim(),
       'relation': relation.trim(),
+      'priority': priority.value,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     };
@@ -88,6 +169,7 @@ class EmergencyContact {
     String? name,
     String? phone,
     String? relation,
+    ContactPriority? priority,
     DateTime? createdAt,
   }) {
     return EmergencyContact(
@@ -96,6 +178,7 @@ class EmergencyContact {
       name: name ?? this.name,
       phone: phone ?? this.phone,
       relation: relation ?? this.relation,
+      priority: priority ?? this.priority,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -117,7 +200,7 @@ class EmergencyContact {
 
   @override
   String toString() =>
-      'EmergencyContact(id: $id, name: $name, phone: $phone, relation: $relation)';
+      'EmergencyContact(id: $id, name: $name, phone: $phone, relation: $relation, priority: ${priority.value})';
 
   @override
   bool operator ==(Object other) =>
@@ -125,8 +208,9 @@ class EmergencyContact {
       other is EmergencyContact &&
           runtimeType == other.runtimeType &&
           id == other.id &&
-          phone == other.phone;
+          phone == other.phone &&
+          priority == other.priority;
 
   @override
-  int get hashCode => Object.hash(id, phone);
+  int get hashCode => Object.hash(id, phone, priority);
 }

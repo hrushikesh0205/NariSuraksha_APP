@@ -13,6 +13,7 @@ import 'package:nari_suraksha/models/sos_record_model.dart';
 import 'package:nari_suraksha/providers/contact_provider.dart';
 import 'package:nari_suraksha/providers/dashboard_provider.dart';
 import 'package:nari_suraksha/providers/sos_provider.dart';
+import 'package:nari_suraksha/providers/sos_escalation_provider.dart';
 import 'package:nari_suraksha/providers/user_provider.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -242,7 +243,18 @@ class _SosScreenState extends State<SosScreen> with TickerProviderStateMixin {
       await context.read<SosProvider>().loadHistory();
       if (!mounted) return;
       final history = context.read<SosProvider>().history;
-      _lastSosDocId = history.isNotEmpty ? history.first.id : null;
+      _lastSosDocId = result.docId ?? (history.isNotEmpty ? history.first.id : null);
+      if (_lastSosDocId != null) {
+        final uid = context.read<UserProvider>().currentUid ?? '';
+        context.read<SosEscalationProvider>().startSession(
+              sosDocId: _lastSosDocId!,
+              userId: uid,
+              latitude: 0,
+              longitude: 0,
+              mapsUrl: _lastMapsUrl ?? '',
+              startedAt: DateTime.now(),
+            );
+      }
       await _showSuccessDialog();
     } else {
       _showErrorSnackBar(result.failureReason ?? 'SOS failed. Please try again.');

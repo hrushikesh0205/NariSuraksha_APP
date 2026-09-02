@@ -178,8 +178,9 @@ class DashboardProvider extends ChangeNotifier {
 
   /// Full SOS flow: get location → write Firestore → log activity.
   ///
+  /// Accepts an optional [triggerSource] (e.g. `'Voice SOS'`) for the activity log.
   /// Returns a [SosTriggerResult] describing success or the error.
-  Future<SosTriggerResult> triggerSos() async {
+  Future<SosTriggerResult> triggerSos({String triggerSource = 'SOS'}) async {
     final uid = _authService.firebaseUser?.uid;
     if (uid == null) {
       return SosTriggerResult.failure('Not signed in. Please log in first.');
@@ -211,16 +212,18 @@ class DashboardProvider extends ChangeNotifier {
         longitude: lng,
         timestamp: DateTime.now(),
         status: SosStatus.active,
+        escalationLevel: 'high',
+        highAlertedAt: DateTime.now(),
       );
-      await _sosRepository.createSosRecord(record);
+      final docId = await _sosRepository.createSosRecord(record);
 
       // 3. Log activity for Recent Alerts feed
       await _activityRepository.logActivity(
         uid: uid,
         type: ActivityLogType.sosActivated,
         description: position != null
-            ? 'SOS triggered at (${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)})'
-            : 'SOS triggered — location unavailable',
+            ? '$triggerSource triggered at (${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)})'
+            : '$triggerSource triggered — location unavailable',
       );
 
       // Refresh safety status after SOS so location permission state updates.
@@ -228,7 +231,7 @@ class DashboardProvider extends ChangeNotifier {
 
       // Stream will auto-update recent alerts — no manual reload needed.
 
-      return SosTriggerResult.success(lat, lng);
+      return SosTriggerResult.success(lat, lng, docId: docId);
     } catch (e) {
       final msg = _friendlyError(e);
       _sosErrorMessage = msg;
@@ -242,9 +245,11 @@ class DashboardProvider extends ChangeNotifier {
 
   // ── Recent Alerts — real-time stream ───────────────────────────────────────
 
-  void _subscribeToAlerts() {
-    final uid = _authService.firebaseUser?.uid;
-    if (uid == null) {
+  void _subscribeToAlerts([String? explicitUid]) {
+    final uid = explicitUid ??
+        _userProvider?.currentUid ??
+        _authService.firebaseUser?.uid;
+    if (uid == null || uid.isEmpty) {
       _recentAlerts = [];
       _alertsErrorMessage = null;
       notifyListeners();
@@ -270,7 +275,7 @@ class DashboardProvider extends ChangeNotifier {
   }
 
   /// Force-restarts the real-time alert subscription (e.g. after retry tap).
-  void refreshAlerts() => _subscribeToAlerts();
+  void refreshAlerts([String? uid]) => _subscribeToAlerts(uid);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -310,16 +315,17 @@ class DashboardProvider extends ChangeNotifier {
 sealed class SosTriggerResult {
   const SosTriggerResult();
 
-  factory SosTriggerResult.success(double lat, double lng) =>
-      _SosSuccess(lat, lng);
+  factory SosTriggerResult.success(double lat, double lng, {String? docId}) =>
+      _SosSuccess(lat, lng, docId: docId);
 
   factory SosTriggerResult.failure(String reason) => _SosFailure(reason);
 }
 
 class _SosSuccess extends SosTriggerResult {
-  const _SosSuccess(this.latitude, this.longitude);
+  const _SosSuccess(this.latitude, this.longitude, {this.docId});
   final double latitude;
   final double longitude;
+  final String? docId;
 }
 
 class _SosFailure extends SosTriggerResult {
@@ -332,6 +338,9 @@ extension SosTriggerResultX on SosTriggerResult {
 
   String? get failureReason =>
       this is _SosFailure ? (this as _SosFailure).reason : null;
+
+  String? get docId =>
+      this is _SosSuccess ? (this as _SosSuccess).docId : null;
 
   /// Google Maps URL for the triggered location (null if this is a failure).
   String? get mapsUrl {

@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -127,7 +128,8 @@ class _ContactsScreenState extends State<ContactsScreen>
         nameCtrl: nameCtrl,
         phoneCtrl: phoneCtrl,
         relationCtrl: relationCtrl,
-        onSave: (name, phone, relation) async {
+        initialPriority: ContactPriority.high,
+        onSave: (name, phone, relation, priority) async {
           final uid = context.read<UserProvider>().currentUid;
           if (uid == null) return 'Not signed in.';
           return context.read<ContactProvider>().addContact(
@@ -135,6 +137,7 @@ class _ContactsScreenState extends State<ContactsScreen>
                 name: name,
                 phone: phone,
                 relation: relation,
+                priority: priority,
               );
         },
       ),
@@ -157,7 +160,8 @@ class _ContactsScreenState extends State<ContactsScreen>
         nameCtrl: nameCtrl,
         phoneCtrl: phoneCtrl,
         relationCtrl: relationCtrl,
-        onSave: (name, phone, relation) async {
+        initialPriority: contact.priority,
+        onSave: (name, phone, relation, priority) async {
           final uid = context.read<UserProvider>().currentUid;
           if (uid == null) return 'Not signed in.';
           return context.read<ContactProvider>().editContact(
@@ -166,6 +170,7 @@ class _ContactsScreenState extends State<ContactsScreen>
                   name: name,
                   phone: phone,
                   relation: relation,
+                  priority: priority,
                 ),
               );
         },
@@ -175,9 +180,9 @@ class _ContactsScreenState extends State<ContactsScreen>
 
   // ── Contact options sheet ─────────────────────────────────────────────────
 
-  void _showContactOptions(BuildContext ctx, EmergencyContact contact) {
+  void _showContactOptions(BuildContext sheetContext, EmergencyContact contact) {
     BottomActionSheet.show(
-      context: ctx,
+      context: context,
       title: contact.name,
       subtitle: contact.relation,
       actions: [
@@ -186,7 +191,8 @@ class _ContactsScreenState extends State<ContactsScreen>
           label: 'Call',
           subtitle: contact.phone,
           onTap: () {
-            ScaffoldMessenger.of(ctx).showSnackBar(
+            Navigator.pop(sheetContext);
+            ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('Calling ${contact.name}…'),
                 behavior: SnackBarBehavior.floating,
@@ -202,7 +208,8 @@ class _ContactsScreenState extends State<ContactsScreen>
           icon: Icons.message_rounded,
           label: 'Send Message',
           onTap: () {
-            ScaffoldMessenger.of(ctx).showSnackBar(
+            Navigator.pop(sheetContext);
+            ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('Messaging ${contact.name}…'),
                 behavior: SnackBarBehavior.floating,
@@ -218,7 +225,7 @@ class _ContactsScreenState extends State<ContactsScreen>
           icon: Icons.edit_rounded,
           label: 'Edit Contact',
           onTap: () {
-            Navigator.pop(ctx);
+            Navigator.pop(sheetContext);
             _showEditContactSheet(contact);
           },
         ),
@@ -227,9 +234,15 @@ class _ContactsScreenState extends State<ContactsScreen>
           label: 'Remove Contact',
           isDangerous: true,
           onTap: () async {
-            Navigator.pop(ctx);
+            // Dismiss the bottom sheet
+            Navigator.pop(sheetContext);
+
+            final messenger = ScaffoldMessenger.of(context);
+            final contactProv = context.read<ContactProvider>();
+            final userProv = context.read<UserProvider>();
+
             final confirmed = await ConfirmationDialog.show(
-              context: ctx,
+              context: context,
               title: 'Remove Contact?',
               message:
                   '${contact.name} will no longer be alerted during emergencies.',
@@ -237,15 +250,36 @@ class _ContactsScreenState extends State<ContactsScreen>
               isDangerous: true,
               icon: Icons.delete_outline_rounded,
             );
-            if (confirmed != true || !ctx.mounted) return;
-            final uid = ctx.read<UserProvider>().currentUid;
-            if (uid == null) return;
-            final err = await ctx.read<ContactProvider>().deleteContact(
-                  uid: uid,
-                  contact: contact,
-                );
-            if (err != null && ctx.mounted) {
-              ScaffoldMessenger.of(ctx).showSnackBar(
+            if (confirmed != true || !mounted) return;
+
+            final authUser = FirebaseAuth.instance.currentUser;
+            final uid = authUser?.uid ?? userProv.currentUid;
+            if (uid == null || uid.isEmpty) {
+              debugPrint('🔥 [ContactsScreen] Delete aborted: User is not authenticated.');
+              messenger.showSnackBar(
+                SnackBar(
+                  content: const Text('Cannot delete: You are not signed in.'),
+                  backgroundColor: AppColors.error,
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                  ),
+                ),
+              );
+              return;
+            }
+
+            debugPrint('🟡 [ContactsScreen] User confirmed deletion for contact "${contact.name}" (ID: ${contact.id})');
+            final err = await contactProv.deleteContact(
+              uid: uid,
+              contact: contact,
+            );
+
+            if (!mounted) return;
+
+            if (err != null) {
+              debugPrint('🔥 [ContactsScreen] Delete returned error: $err');
+              messenger.showSnackBar(
                 SnackBar(
                   content: Text(err),
                   backgroundColor: AppColors.error,
@@ -253,6 +287,23 @@ class _ContactsScreenState extends State<ContactsScreen>
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(AppRadius.md),
                   ),
+                  duration: const Duration(seconds: 4),
+                ),
+              );
+            } else {
+              debugPrint('✅ [ContactsScreen] Contact deleted successfully from UI.');
+              messenger.showSnackBar(
+                SnackBar(
+                  content: Text(
+                    '${contact.name} was removed from emergency contacts.',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  backgroundColor: AppColors.success,
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                  ),
+                  duration: const Duration(seconds: 3),
                 ),
               );
             }
@@ -722,26 +773,35 @@ class _ContactCardState extends State<_ContactCard>
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          const SizedBox(height: 2),
-                          if (c.relation.isNotEmpty)
-                            Row(
-                              children: [
-                                const Icon(
-                                  Icons.family_restroom_rounded,
-                                  size: 13,
-                                  color: Color(0xFF16A34A),
+                          const SizedBox(height: 3),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              if (c.relation.isNotEmpty)
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.family_restroom_rounded,
+                                      size: 13,
+                                      color: Color(0xFF16A34A),
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      c.relation,
+                                      style: AppTextStyles.labelMedium.copyWith(
+                                        color: const Color(0xFF16A34A),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  c.relation,
-                                  style: AppTextStyles.labelMedium.copyWith(
-                                    color: const Color(0xFF16A34A),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          const SizedBox(height: 2),
+                              _buildCardPriorityBadge(c.priority),
+                            ],
+                          ),
+                          const SizedBox(height: 3),
                           Text(
                             c.phone,
                             style: AppTextStyles.bodySmall.copyWith(
@@ -822,6 +882,39 @@ class _ContactCardState extends State<_ContactCard>
             ),
           ),
         ),
+      ),
+    );
+  }
+  Widget _buildCardPriorityBadge(ContactPriority priority) {
+    Color bg;
+    Color fg;
+    String label;
+    switch (priority) {
+      case ContactPriority.high:
+        bg = const Color(0xFFFEE2E2);
+        fg = const Color(0xFFDC2626);
+        label = 'High · T=0';
+        break;
+      case ContactPriority.medium:
+        bg = const Color(0xFFFEF3C7);
+        fg = const Color(0xFFD97706);
+        label = 'Medium · +2m';
+        break;
+      case ContactPriority.low:
+        bg = const Color(0xFFE0E7FF);
+        fg = const Color(0xFF4F46E5);
+        label = 'Low · +5m';
+        break;
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(AppRadius.full),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(color: fg, fontSize: 10, fontWeight: FontWeight.w700),
       ),
     );
   }
@@ -919,6 +1012,7 @@ class _ContactFormSheet extends StatefulWidget {
     required this.nameCtrl,
     required this.phoneCtrl,
     required this.relationCtrl,
+    this.initialPriority = ContactPriority.high,
     required this.onSave,
   });
 
@@ -926,10 +1020,15 @@ class _ContactFormSheet extends StatefulWidget {
   final TextEditingController nameCtrl;
   final TextEditingController phoneCtrl;
   final TextEditingController relationCtrl;
+  final ContactPriority initialPriority;
 
   /// Called on save. Returns null on success or an error string.
-  final Future<String?> Function(String name, String phone, String relation)
-      onSave;
+  final Future<String?> Function(
+    String name,
+    String phone,
+    String relation,
+    ContactPriority priority,
+  ) onSave;
 
   @override
   State<_ContactFormSheet> createState() => _ContactFormSheetState();
@@ -938,6 +1037,13 @@ class _ContactFormSheet extends StatefulWidget {
 class _ContactFormSheetState extends State<_ContactFormSheet> {
   bool _isSaving = false;
   String? _error;
+  late ContactPriority _selectedPriority;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedPriority = widget.initialPriority;
+  }
 
   Future<void> _handleSave() async {
     final name = widget.nameCtrl.text.trim();
@@ -962,7 +1068,7 @@ class _ContactFormSheetState extends State<_ContactFormSheet> {
       _error = null;
     });
 
-    final err = await widget.onSave(name, phone, relation);
+    final err = await widget.onSave(name, phone, relation, _selectedPriority);
 
     if (!mounted) return;
 
@@ -974,6 +1080,102 @@ class _ContactFormSheetState extends State<_ContactFormSheet> {
     } else {
       Navigator.pop(context);
     }
+  }
+
+  Widget _buildPrioritySelector(ColorScheme cs) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Alert Priority (Escalation Tier)',
+          style: AppTextStyles.labelLarge.copyWith(
+            fontWeight: FontWeight.w700,
+            color: cs.onSurface,
+          ),
+        ),
+        const SizedBox(height: 8),
+        _buildPriorityOption(
+          priority: ContactPriority.high,
+          title: 'High Priority',
+          subtitle: 'Immediate Alert (T = 0 min)',
+          color: const Color(0xFFDC2626),
+          bgColor: const Color(0xFFFEE2E2),
+        ),
+        const SizedBox(height: 6),
+        _buildPriorityOption(
+          priority: ContactPriority.medium,
+          title: 'Medium Priority',
+          subtitle: 'Alerted after 2 minutes if unresolved',
+          color: const Color(0xFFD97706),
+          bgColor: const Color(0xFFFEF3C7),
+        ),
+        const SizedBox(height: 6),
+        _buildPriorityOption(
+          priority: ContactPriority.low,
+          title: 'Low Priority',
+          subtitle: 'Alerted after 5 minutes if unresolved',
+          color: const Color(0xFF4F46E5),
+          bgColor: const Color(0xFFE0E7FF),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPriorityOption({
+    required ContactPriority priority,
+    required String title,
+    required String subtitle,
+    required Color color,
+    required Color bgColor,
+  }) {
+    final isSelected = _selectedPriority == priority;
+    return InkWell(
+      onTap: () => setState(() => _selectedPriority = priority),
+      borderRadius: BorderRadius.circular(AppRadius.md),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? bgColor.withValues(alpha: 0.5) : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(
+            color: isSelected ? color : Colors.grey.withValues(alpha: 0.25),
+            width: isSelected ? 1.8 : 1.0,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isSelected
+                  ? Icons.radio_button_checked_rounded
+                  : Icons.radio_button_off_rounded,
+              color: isSelected ? color : Colors.grey,
+              size: 20,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: isSelected ? color : null,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -992,102 +1194,108 @@ class _ContactFormSheetState extends State<_ContactFormSheet> {
         ),
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.lg),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Handle
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: cs.outlineVariant,
-                    borderRadius: BorderRadius.circular(AppRadius.full),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Handle
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: cs.outlineVariant,
+                      borderRadius: BorderRadius.circular(AppRadius.full),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: AppSpacing.lg),
+                const SizedBox(height: AppSpacing.lg),
 
-              Text(
-                widget.title,
-                style: AppTextStyles.titleLarge.copyWith(
-                  color: cs.onSurface,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'This person will be alerted during emergencies.',
-                style: AppTextStyles.bodySmall
-                    .copyWith(color: AppColors.textSecondary),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-
-              // Name field
-              CustomTextField(
-                controller: widget.nameCtrl,
-                label: 'Full Name',
-                hint: 'e.g. Ananya Sharma',
-                prefixIcon: Icons.person_outline_rounded,
-              ),
-              const SizedBox(height: AppSpacing.md),
-
-              // Relation field
-              CustomTextField(
-                controller: widget.relationCtrl,
-                label: 'Relationship',
-                hint: 'e.g. Mother, Friend, Sister',
-                prefixIcon: Icons.family_restroom_rounded,
-              ),
-              const SizedBox(height: AppSpacing.md),
-
-              // Phone field
-              CustomTextField(
-                controller: widget.phoneCtrl,
-                label: 'Phone Number',
-                hint: '+91 98765 43210',
-                prefixIcon: Icons.phone_outlined,
-                keyboardType: TextInputType.phone,
-              ),
-
-              // Error message
-              if (_error != null) ...[
-                const SizedBox(height: AppSpacing.sm),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.sm, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.errorContainer.withValues(alpha: 0.4),
-                    borderRadius: BorderRadius.circular(AppRadius.md),
+                Text(
+                  widget.title,
+                  style: AppTextStyles.titleLarge.copyWith(
+                    color: cs.onSurface,
+                    fontWeight: FontWeight.w700,
                   ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.error_outline_rounded,
-                          size: 16, color: AppColors.error),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          _error!,
-                          style: AppTextStyles.bodySmall
-                              .copyWith(color: AppColors.error),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'This person will be alerted based on their priority level.',
+                  style: AppTextStyles.bodySmall
+                      .copyWith(color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: AppSpacing.lg),
+
+                // Name field
+                CustomTextField(
+                  controller: widget.nameCtrl,
+                  label: 'Full Name',
+                  hint: 'e.g. Ananya Sharma',
+                  prefixIcon: Icons.person_outline_rounded,
+                ),
+                const SizedBox(height: AppSpacing.md),
+
+                // Relation field
+                CustomTextField(
+                  controller: widget.relationCtrl,
+                  label: 'Relationship',
+                  hint: 'e.g. Mother, Friend, Sister',
+                  prefixIcon: Icons.family_restroom_rounded,
+                ),
+                const SizedBox(height: AppSpacing.md),
+
+                // Phone field
+                CustomTextField(
+                  controller: widget.phoneCtrl,
+                  label: 'Phone Number',
+                  hint: '+91 98765 43210',
+                  prefixIcon: Icons.phone_outlined,
+                  keyboardType: TextInputType.phone,
+                ),
+                const SizedBox(height: AppSpacing.md),
+
+                // Priority selector
+                _buildPrioritySelector(cs),
+
+                // Error message
+                if (_error != null) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.sm, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.errorContainer.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline_rounded,
+                            size: 16, color: AppColors.error),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            _error!,
+                            style: AppTextStyles.bodySmall
+                                .copyWith(color: AppColors.error),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
+                ],
+
+                const SizedBox(height: AppSpacing.lg),
+
+                PrimaryButton(
+                  label: _isSaving ? 'Saving…' : 'Save Contact',
+                  onPressed: _isSaving ? () {} : _handleSave,
+                  icon: _isSaving ? null : Icons.check_rounded,
                 ),
+
+                const SizedBox(height: AppSpacing.sm),
               ],
-
-              const SizedBox(height: AppSpacing.lg),
-
-              PrimaryButton(
-                label: _isSaving ? 'Saving…' : 'Save Contact',
-                onPressed: _isSaving ? () {} : _handleSave,
-                icon: _isSaving ? null : Icons.check_rounded,
-              ),
-
-              const SizedBox(height: AppSpacing.sm),
-            ],
+            ),
           ),
         ),
       ),

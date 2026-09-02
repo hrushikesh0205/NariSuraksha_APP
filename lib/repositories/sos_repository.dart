@@ -39,6 +39,32 @@ class SosRepository {
     }
   }
 
+  /// Updates the escalation level and records the corresponding priority alert timestamp.
+  Future<void> updateEscalationLevel(
+    String docId, {
+    required String level,
+    DateTime? alertedAt,
+  }) async {
+    try {
+      final updateData = <String, dynamic>{
+        'escalationLevel': level,
+      };
+      if (level == 'medium') {
+        updateData['mediumAlertedAt'] = alertedAt != null
+            ? Timestamp.fromDate(alertedAt)
+            : FieldValue.serverTimestamp();
+      } else if (level == 'low') {
+        updateData['lowAlertedAt'] = alertedAt != null
+            ? Timestamp.fromDate(alertedAt)
+            : FieldValue.serverTimestamp();
+      }
+      await _collection.doc(docId).update(updateData);
+    } on FirebaseException catch (e) {
+      throw Exception(
+          'Failed to update SOS escalation level [${e.code}]: ${e.message}');
+    }
+  }
+
   // ── Read ───────────────────────────────────────────────────────────────────
 
   /// Fetches the [limit] most recent SOS records for a given user.

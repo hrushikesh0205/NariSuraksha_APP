@@ -9,6 +9,8 @@ import 'package:nari_suraksha/providers/contact_provider.dart';
 import 'package:nari_suraksha/providers/profile_provider.dart';
 import 'package:nari_suraksha/providers/sos_provider.dart';
 import 'package:nari_suraksha/providers/settings_provider.dart';
+import 'package:nari_suraksha/providers/voice_sos_provider.dart';
+import 'package:nari_suraksha/providers/sos_escalation_provider.dart';
 
 // ── FlutterFire ──────────────────────────────────────────────────────────────
 // Once you place android/app/google-services.json, run:
@@ -28,7 +30,7 @@ void main() async {
   runApp(
     MultiProvider(
       providers: [
-        // App preferences & settings (theme, notifications, location)
+        // App preferences & settings (theme, notifications, location, voice SOS)
         ChangeNotifierProvider<SettingsProvider>(
           create: (_) => SettingsProvider(),
         ),
@@ -60,6 +62,25 @@ void main() async {
         // SOS history + resolve-emergency
         ChangeNotifierProvider<SosProvider>(
           create: (_) => SosProvider(),
+        ),
+
+        // Voice SOS — keyword detection wired to DashboardProvider
+        ChangeNotifierProxyProvider<DashboardProvider, VoiceSosProvider>(
+          create: (ctx) => VoiceSosProvider(
+            dashboardProvider: ctx.read<DashboardProvider>(),
+          ),
+          update: (ctx, dashProvider, previous) {
+            if (previous != null) {
+              previous.updateDashboardProvider(dashProvider);
+              return previous;
+            }
+            return VoiceSosProvider(dashboardProvider: dashProvider);
+          },
+        ),
+
+        // SOS Escalation session manager — single source of truth for active SOS
+        ChangeNotifierProvider<SosEscalationProvider>(
+          create: (_) => SosEscalationProvider(),
         ),
       ],
       child: const NarisurakshaApp(),

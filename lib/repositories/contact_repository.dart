@@ -38,13 +38,18 @@ class ContactRepository {
     final authUid = _auth.currentUser?.uid;
     debugPrint('[ContactRepository] watchContacts subscribing to path: $path | request.auth.uid: $authUid');
     return _contactsRef(uid)
-        .orderBy('createdAt', descending: false)
         .snapshots()
         .map((snap) {
           debugPrint('[ContactRepository] watchContacts snapshot received ${snap.docs.length} docs for path: $path');
-          return snap.docs
+          final list = snap.docs
               .map((doc) => EmergencyContact.fromFirestore(doc))
               .toList();
+          list.sort((a, b) {
+            final aTime = a.createdAt ?? DateTime(2000);
+            final bTime = b.createdAt ?? DateTime(2000);
+            return aTime.compareTo(bTime);
+          });
+          return list;
         });
   }
 
@@ -53,13 +58,17 @@ class ContactRepository {
     final authUid = _auth.currentUser?.uid;
     debugPrint('[ContactRepository] getContacts fetching path: $path | request.auth.uid: $authUid');
     try {
-      final snap = await _contactsRef(uid)
-          .orderBy('createdAt', descending: false)
-          .get();
+      final snap = await _contactsRef(uid).get();
       debugPrint('[ContactRepository] getContacts successfully fetched ${snap.docs.length} docs for path: $path');
-      return snap.docs
+      final list = snap.docs
           .map((doc) => EmergencyContact.fromFirestore(doc))
           .toList();
+      list.sort((a, b) {
+        final aTime = a.createdAt ?? DateTime(2000);
+        final bTime = b.createdAt ?? DateTime(2000);
+        return aTime.compareTo(bTime);
+      });
+      return list;
     } on FirebaseException catch (e, st) {
       debugPrint('🔥 [ContactRepository] getContacts FirebaseException [${e.code}]: ${e.message}\nPath: $path\n$st');
       rethrow;
@@ -166,7 +175,70 @@ class ContactRepository {
 
   /// Permanently removes the contact document.
   Future<void> deleteContact(String uid, String contactId) async {
-    await _contactsRef(uid).doc(contactId).delete();
+    final authUser = _auth.currentUser;
+    final authUid = authUser?.uid;
+    final path = 'users/$uid/contacts/$contactId';
+
+    debugPrint('==================================================');
+    debugPrint('[DELETE CONTACT]');
+    debugPrint('authenticated UID = $authUid');
+    debugPrint('requested UID = $uid');
+    debugPrint('contactId = $contactId');
+    debugPrint('Firestore path = $path');
+    debugPrint('FirebaseAuth.currentUser is null? ${authUser == null}');
+    debugPrint('==================================================');
+
+    if (authUser == null) {
+      debugPrint('[DELETE CONTACT FAILED]');
+      debugPrint('FirebaseException code = unauthenticated');
+      debugPrint('message = User is not authenticated.');
+      debugPrint('path = $path');
+      throw FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'unauthenticated',
+        message: 'User is not authenticated.',
+      );
+    }
+    if (authUid != uid) {
+      debugPrint('[DELETE CONTACT FAILED]');
+      debugPrint('FirebaseException code = permission-denied');
+      debugPrint('message = UID mismatch: auth=$authUid, requested=$uid');
+      debugPrint('path = $path');
+      throw FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'permission-denied',
+        message: 'UID mismatch: auth=$authUid, requested=$uid',
+      );
+    }
+
+    try {
+      await _contactsRef(uid).doc(contactId).delete();
+      debugPrint('[DELETE CONTACT SUCCESS]');
+      debugPrint('contactId = $contactId');
+      debugPrint('path = $path');
+
+      // Post-delete verification check in Firestore
+      try {
+        final checkDoc = await _contactsRef(uid).doc(contactId).get();
+        debugPrint('[DELETE CONTACT VERIFY] Document exists after delete? ${checkDoc.exists}');
+      } catch (verifyErr) {
+        debugPrint('[DELETE CONTACT VERIFY ERROR] Could not verify post-delete doc existence: $verifyErr');
+      }
+    } on FirebaseException catch (e) {
+      debugPrint('==================================================');
+      debugPrint('[DELETE CONTACT FAILED]');
+      debugPrint('FirebaseException code = ${e.code}');
+      debugPrint('message = ${e.message}');
+      debugPrint('path = $path');
+      debugPrint('==================================================');
+      rethrow;
+    } catch (e) {
+      debugPrint('==================================================');
+      debugPrint('[DELETE CONTACT FAILED] Unexpected error: $e');
+      debugPrint('path = $path');
+      debugPrint('==================================================');
+      rethrow;
+    }
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────

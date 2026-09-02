@@ -89,10 +89,10 @@ class _DashboardScreenState extends State<DashboardScreen>
     ),
     _QuickAction(
       icon: Icons.mic_rounded,
-      label: 'Voice\nDetection',
+      label: 'Voice\nSOS',
       color: AppColors.pastGreenIcon,
       bgColor: AppColors.pastGreen,
-      route: null, // Coming soon
+      route: AppRoutes.voiceSos,
     ),
     _QuickAction(
       icon: Icons.videocam_rounded,
@@ -870,7 +870,7 @@ class _SosButtonState extends State<_SosButton> {
       }
 
       final history = ctx.read<SosProvider>().history;
-      final sosDocId = history.isNotEmpty ? history.first.id : null;
+      final sosDocId = result.docId ?? (history.isNotEmpty ? history.first.id : null);
       final sosTime = DateTime.now();
 
       await SosSuccessSheet.show(

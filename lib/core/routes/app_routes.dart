@@ -50,4 +50,7 @@ abstract final class AppRoutes {
 
   /// Safety timer screen.
   static const String safetyTimer = '/safety-timer';
+
+  /// Voice SOS keyword detection screen.
+  static const String voiceSos = '/voice-sos';
 }

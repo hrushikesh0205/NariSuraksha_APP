@@ -171,7 +171,6 @@ class _ProfilePageState extends State<ProfilePage>
   void _showEditProfileSheet(UserModel user) {
     final nameCtrl = TextEditingController(text: user.name);
     final phoneCtrl = TextEditingController(text: user.phone ?? '');
-    final photoCtrl = TextEditingController(text: user.photoUrl ?? '');
 
     showModalBottomSheet<void>(
       context: context,
@@ -230,14 +229,6 @@ class _ProfilePageState extends State<ProfilePage>
                       prefixIcon: Icons.phone_outlined,
                       keyboardType: TextInputType.phone,
                     ),
-                    const SizedBox(height: AppSpacing.md),
-                    CustomTextField(
-                      controller: photoCtrl,
-                      label: 'Photo URL (optional)',
-                      hint: 'https://example.com/avatar.jpg',
-                      prefixIcon: Icons.image_outlined,
-                      keyboardType: TextInputType.url,
-                    ),
                     if (error != null) ...[
                       const SizedBox(height: AppSpacing.sm),
                       Text(
@@ -271,7 +262,6 @@ class _ProfilePageState extends State<ProfilePage>
                                     current: user,
                                     name: name,
                                     phone: phoneCtrl.text.trim(),
-                                    photoUrl: photoCtrl.text.trim(),
                                   );
 
                               if (err != null) {
@@ -316,6 +306,46 @@ class _ProfilePageState extends State<ProfilePage>
         );
       },
     );
+  }
+
+  // ── Profile Photo Picker & Upload ──────────────────────────────────────────
+
+  Future<void> _onTapProfilePhoto(UserModel user) async {
+    final profileProv = context.read<ProfileProvider>();
+    final userProv = context.read<UserProvider>();
+
+    final err = await profileProv.pickAndUploadProfilePhoto(uid: user.uid);
+    if (!mounted) return;
+
+    if (err != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(err),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.md),
+          ),
+        ),
+      );
+    } else if (profileProv.successMessage != null) {
+      await userProv.refresh();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Profile photo updated successfully! 📸',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          backgroundColor: AppColors.success,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.md),
+          ),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
   }
 
   // ── Edit Medical Info sheet ─────────────────────────────────────────────────
@@ -1403,7 +1433,6 @@ class _ProfilePageState extends State<ProfilePage>
                   ),
 
                   // ── Medical Information ───────────────────────────────────
-                  _sectionLabel('Medical Information', cs),
                   _section(
                     child: _MedicalInfoCard(
                       cs: cs,
@@ -1415,7 +1444,6 @@ class _ProfilePageState extends State<ProfilePage>
                   ),
 
                   // ── Emergency Contacts Summary ────────────────────────────
-                  _sectionLabel('Emergency Contacts', cs),
                   _section(
                     child: _ContactsSummaryCard(
                       cs: cs,
@@ -1691,63 +1719,84 @@ class _ProfilePageState extends State<ProfilePage>
           child: Column(
             children: [
               // Avatar + edit badge
-              Stack(
-                alignment: Alignment.bottomRight,
-                children: [
-                  Container(
-                    width: 108,
-                    height: 108,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: AppColors.onPrimary.withValues(alpha: 0.30),
-                        width: 3,
-                      ),
-                    ),
-                    child: CircleAvatar(
-                      radius: 50,
-                      backgroundColor:
-                          AppColors.onPrimary.withValues(alpha: 0.18),
-                      backgroundImage:
-                          hasPhoto ? NetworkImage(user.photoUrl!) : null,
-                      child: !hasPhoto
-                          ? Text(
-                              initials,
-                              style: AppTextStyles.headlineMedium.copyWith(
-                                color: AppColors.onPrimary,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 34,
-                              ),
-                            )
-                          : null,
-                    ),
-                  ),
-                  // Camera / Edit icon
-                  GestureDetector(
-                    onTap: user != null
-                        ? () => _showEditProfileSheet(user)
-                        : null,
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: cs.surface,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.15),
-                            blurRadius: 6,
+              Consumer<ProfileProvider>(
+                builder: (context, profileProv, _) {
+                  final isUploading = profileProv.isUploadingPhoto;
+                  return Stack(
+                    alignment: Alignment.bottomRight,
+                    children: [
+                      GestureDetector(
+                        onTap: user != null && !isUploading
+                            ? () => _onTapProfilePhoto(user)
+                            : null,
+                        child: Container(
+                          width: 108,
+                          height: 108,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: AppColors.onPrimary.withValues(alpha: 0.30),
+                              width: 3,
+                            ),
                           ),
-                        ],
+                          child: CircleAvatar(
+                            radius: 50,
+                            backgroundColor:
+                                AppColors.onPrimary.withValues(alpha: 0.18),
+                            backgroundImage:
+                                hasPhoto ? NetworkImage(user.photoUrl!) : null,
+                            child: isUploading
+                                ? const SizedBox(
+                                    width: 32,
+                                    height: 32,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 3,
+                                    ),
+                                  )
+                                : (!hasPhoto
+                                    ? Text(
+                                        initials,
+                                        style: AppTextStyles.headlineMedium
+                                            .copyWith(
+                                          color: AppColors.onPrimary,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 34,
+                                        ),
+                                      )
+                                    : null),
+                          ),
+                        ),
                       ),
-                      child: Icon(
-                        Icons.camera_alt_rounded,
-                        size: 16,
-                        color: cs.primary,
+                      // Camera / Gallery picker icon
+                      GestureDetector(
+                        onTap: user != null && !isUploading
+                            ? () => _onTapProfilePhoto(user)
+                            : null,
+                        child: Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: cs.surface,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.18),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            Icons.camera_alt_rounded,
+                            size: 18,
+                            color: cs.primary,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                ],
+                    ],
+                  );
+                },
               ),
 
               const SizedBox(height: AppSpacing.md),

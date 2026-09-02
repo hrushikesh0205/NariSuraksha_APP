@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import 'package:nari_suraksha/core/routes/app_routes.dart';
 import 'package:nari_suraksha/core/services/location_service.dart';
 import 'package:nari_suraksha/core/theme/app_colors.dart';
 import 'package:nari_suraksha/core/theme/app_text_styles.dart';
@@ -311,6 +312,23 @@ class _SettingsPageState extends State<SettingsPage> {
                   }
                   settings.setLocationSharingEnabled(v, uid: uid);
                 },
+              ),
+              SwitchListTile(
+                secondary: const Icon(Icons.mic_outlined,
+                    color: AppColors.primary),
+                title: const Text('Voice SOS Detection'),
+                subtitle: const Text('Trigger SOS by speaking emergency keywords'),
+                value: settings.voiceSosEnabled,
+                activeThumbColor: AppColors.primary,
+                onChanged: (v) => settings.setVoiceSosEnabled(v, uid: uid),
+              ),
+              ListTile(
+                leading: const Icon(Icons.record_voice_over_outlined,
+                    color: AppColors.primary),
+                title: const Text('Configure Voice SOS'),
+                subtitle: const Text('Test keywords, microphone & status'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).pushNamed(AppRoutes.voiceSos),
               ),
 
               // ── Appearance ───────────────────────────────────────────────────────

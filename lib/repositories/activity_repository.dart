@@ -50,13 +50,13 @@ class ActivityRepository {
     try {
       final snap = await _collection
           .where('userId', isEqualTo: uid)
-          .orderBy('timestamp', descending: true)
-          .limit(limit)
           .get();
-      return snap.docs
+      final list = snap.docs
           .map((d) => ActivityLogModel.fromFirestore(
               d as DocumentSnapshot<Map<String, dynamic>>))
           .toList();
+      list.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      return list.take(limit).toList();
     } on FirebaseException catch (e) {
       throw Exception(
           'Failed to fetch activity logs [${e.code}]: ${e.message}');
@@ -65,19 +65,22 @@ class ActivityRepository {
 
   /// Returns a live [Stream] of the [limit] most recent activity logs for [uid].
   ///
-  /// Use with [StreamBuilder] in the UI for real-time updates.
+  /// Uses client-side timestamp ordering so newly triggered SOS events appear
+  /// immediately in the UI without requiring custom composite index setup.
   Stream<List<ActivityLogModel>> watchRecentActivity(
     String uid, {
     int limit = 10,
   }) {
     return _collection
         .where('userId', isEqualTo: uid)
-        .orderBy('timestamp', descending: true)
-        .limit(limit)
         .snapshots()
-        .map((snap) => snap.docs
-            .map((d) => ActivityLogModel.fromFirestore(
-                d as DocumentSnapshot<Map<String, dynamic>>))
-            .toList());
+        .map((snap) {
+          final list = snap.docs
+              .map((d) => ActivityLogModel.fromFirestore(
+                  d as DocumentSnapshot<Map<String, dynamic>>))
+              .toList();
+          list.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+          return list.take(limit).toList();
+        });
   }
 }

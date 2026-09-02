@@ -11,6 +11,7 @@ import 'package:nari_suraksha/features/home/screens/home_page.dart';
 import 'package:nari_suraksha/features/profile/screens/profile_page.dart';
 import 'package:nari_suraksha/features/settings/screens/settings_page.dart';
 import 'package:nari_suraksha/features/emergency_contacts/screens/contacts_screen.dart';
+import 'package:nari_suraksha/features/voice_detection/screens/voice_sos_screen.dart';
 
 /// Centralised routing authority for Nari Suraksha.
 ///
@@ -72,6 +73,9 @@ abstract final class AppRouter {
       // ── Feature screens (Quick Actions) ────────────────────────────────────
       case AppRoutes.contacts:
         return _build(settings, const ContactsScreen());
+
+      case AppRoutes.voiceSos:
+        return _build(settings, const VoiceSosScreen());
 
       case AppRoutes.liveTracking:
         return _build(settings, const _ComingSoonPage(title: 'Live Tracking'));

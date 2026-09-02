@@ -28,6 +28,7 @@ class SettingsProvider extends ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.system;
   bool _notificationsEnabled = true;
   bool _locationSharingEnabled = true;
+  bool _voiceSosEnabled = true;
   bool _biometricEnabled = false;
   String _language = 'English (India)';
 
@@ -36,6 +37,7 @@ class SettingsProvider extends ChangeNotifier {
   ThemeMode get themeMode => _themeMode;
   bool get notificationsEnabled => _notificationsEnabled;
   bool get locationSharingEnabled => _locationSharingEnabled;
+  bool get voiceSosEnabled => _voiceSosEnabled;
   bool get biometricEnabled => _biometricEnabled;
   String get language => _language;
 
@@ -77,6 +79,10 @@ class SettingsProvider extends ChangeNotifier {
       _locationSharingEnabled = s['locationSharing'] as bool? ?? true;
     }
 
+    if (s.containsKey('voiceSos')) {
+      _voiceSosEnabled = s['voiceSos'] as bool? ?? true;
+    }
+
     if (s.containsKey('biometric')) {
       _biometricEnabled = s['biometric'] as bool? ?? false;
     }
@@ -112,6 +118,13 @@ class SettingsProvider extends ChangeNotifier {
     await _syncSettings(uid);
   }
 
+  /// Toggles Voice SOS keyword detection preference.
+  Future<void> setVoiceSosEnabled(bool enabled, {String? uid}) async {
+    _voiceSosEnabled = enabled;
+    notifyListeners();
+    await _syncSettings(uid);
+  }
+
   /// Toggles biometric lock.
   Future<void> setBiometricEnabled(bool enabled, {String? uid}) async {
     _biometricEnabled = enabled;
@@ -141,6 +154,7 @@ class SettingsProvider extends ChangeNotifier {
           'themeMode': themeStr,
           'notifications': _notificationsEnabled,
           'locationSharing': _locationSharingEnabled,
+          'voiceSos': _voiceSosEnabled,
           'biometric': _biometricEnabled,
           'language': _language,
         },

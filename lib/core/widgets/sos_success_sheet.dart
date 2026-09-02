@@ -1,11 +1,14 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:nari_suraksha/core/services/sms_service.dart';
 import 'package:nari_suraksha/core/theme/app_colors.dart';
 import 'package:nari_suraksha/core/theme/app_text_styles.dart';
+import 'package:nari_suraksha/core/widgets/safety_check_sheet.dart';
 import 'package:nari_suraksha/models/contact_model.dart';
 import 'package:nari_suraksha/providers/contact_provider.dart';
+import 'package:nari_suraksha/providers/sos_escalation_provider.dart';
 import 'package:nari_suraksha/providers/sos_provider.dart';
 import 'package:nari_suraksha/providers/user_provider.dart';
 
@@ -13,12 +16,10 @@ import 'package:nari_suraksha/providers/user_provider.dart';
 // SmsContactsSheet  — public, shared widget
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Bottom sheet that shows all emergency contacts with a "Send SMS" button each.
+/// Bottom sheet that shows emergency contacts grouped/filtered by priority with "Send SMS" actions.
 ///
 /// Uses [SmsService] to build the emergency message and open the native SMS
-/// composer. The user taps Send in the SMS app — no SEND_SMS permission needed.
-///
-/// Used by both the Dashboard and the dedicated SOS screen.
+/// composer.
 class SmsContactsSheet extends StatefulWidget {
   const SmsContactsSheet({
     super.key,
@@ -26,12 +27,14 @@ class SmsContactsSheet extends StatefulWidget {
     required this.userName,
     required this.mapsUrl,
     required this.sosTime,
+    this.initialPriorityFilter,
   });
 
   final List<EmergencyContact> contacts;
   final String userName;
   final String mapsUrl;
   final DateTime sosTime;
+  final ContactPriority? initialPriorityFilter;
 
   /// Convenience factory — shows the sheet as a modal bottom sheet.
   static Future<void> show(
@@ -40,6 +43,7 @@ class SmsContactsSheet extends StatefulWidget {
     required String userName,
     required String mapsUrl,
     required DateTime sosTime,
+    ContactPriority? initialPriorityFilter,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -50,6 +54,7 @@ class SmsContactsSheet extends StatefulWidget {
         userName: userName,
         mapsUrl: mapsUrl,
         sosTime: sosTime,
+        initialPriorityFilter: initialPriorityFilter,
       ),
     );
   }
@@ -61,8 +66,15 @@ class SmsContactsSheet extends StatefulWidget {
 class _SmsContactsSheetState extends State<SmsContactsSheet> {
   static const _smsService = SmsService();
 
-  /// Tracks which contacts have already had the SMS composer opened.
+  /// Tracks which contacts have already had the SMS composer opened in this sheet session.
   final Set<int> _sent = {};
+  ContactPriority? _selectedPriority;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedPriority = widget.initialPriorityFilter;
+  }
 
   String get _message => _smsService.buildEmergencyMessage(
         userName: widget.userName,
@@ -70,9 +82,19 @@ class _SmsContactsSheetState extends State<SmsContactsSheet> {
         timestamp: widget.sosTime,
       );
 
-  Future<void> _sendSms(int index) async {
-    final contact = widget.contacts[index];
+  List<EmergencyContact> get _displayedContacts {
+    if (_selectedPriority == null) {
+      // Sort: High -> Medium -> Low
+      final sorted = List<EmergencyContact>.from(widget.contacts);
+      sorted.sort((a, b) => a.priority.index.compareTo(b.priority.index));
+      return sorted;
+    }
+    return widget.contacts
+        .where((c) => c.priority == _selectedPriority)
+        .toList();
+  }
 
+  Future<void> _sendSms(EmergencyContact contact, int index) async {
     if (!_smsService.isValidPhone(contact.phone)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -96,6 +118,9 @@ class _SmsContactsSheetState extends State<SmsContactsSheet> {
     );
 
     if (launched) {
+      if (mounted) {
+        context.read<SosEscalationProvider>().recordContactAlerted(contact.phone);
+      }
       setState(() => _sent.add(index));
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -112,12 +137,51 @@ class _SmsContactsSheetState extends State<SmsContactsSheet> {
     }
   }
 
+  Widget _buildPriorityBadge(ContactPriority priority) {
+    Color bg;
+    Color fg;
+    String label;
+
+    switch (priority) {
+      case ContactPriority.high:
+        bg = const Color(0xFFFEE2E2);
+        fg = const Color(0xFFDC2626);
+        label = 'High · T=0';
+        break;
+      case ContactPriority.medium:
+        bg = const Color(0xFFFEF3C7);
+        fg = const Color(0xFFD97706);
+        label = 'Medium · +2m';
+        break;
+      case ContactPriority.low:
+        bg = const Color(0xFFE0E7FF);
+        fg = const Color(0xFF4F46E5);
+        label = 'Low · +5m';
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(AppRadius.full),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: fg,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final contacts = widget.contacts;
-    final validCount =
-        contacts.where((c) => _smsService.isValidPhone(c.phone)).length;
+    final displayed = _displayedContacts;
+    final escalationProv = context.watch<SosEscalationProvider>();
 
     return Container(
       margin: const EdgeInsets.all(AppSpacing.md),
@@ -176,7 +240,7 @@ class _SmsContactsSheetState extends State<SmsContactsSheet> {
                             ),
                           ),
                           Text(
-                            '$validCount contact${validCount == 1 ? '' : 's'} to notify',
+                            '${widget.contacts.length} registered contact${widget.contacts.length == 1 ? '' : 's'}',
                             style: AppTextStyles.bodySmall
                                 .copyWith(color: cs.onSurfaceVariant),
                           ),
@@ -186,23 +250,38 @@ class _SmsContactsSheetState extends State<SmsContactsSheet> {
                   ],
                 ),
                 const SizedBox(height: AppSpacing.md),
-                Container(
-                  padding: const EdgeInsets.all(AppSpacing.sm),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEDE9FE),
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                  ),
+
+                // Priority Filter Chips
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      const Icon(Icons.info_outline_rounded,
-                          color: Color(0xFF7C3AED), size: 16),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          'Tap "Send SMS" for each contact. Your SMS app will open with the message pre-filled.',
-                          style: AppTextStyles.bodySmall
-                              .copyWith(color: const Color(0xFF7C3AED)),
-                        ),
+                      FilterChip(
+                        label: const Text('All Contacts'),
+                        selected: _selectedPriority == null,
+                        onSelected: (_) =>
+                            setState(() => _selectedPriority = null),
+                      ),
+                      const SizedBox(width: 8),
+                      FilterChip(
+                        label: const Text('High (T=0)'),
+                        selected: _selectedPriority == ContactPriority.high,
+                        onSelected: (_) => setState(
+                            () => _selectedPriority = ContactPriority.high),
+                      ),
+                      const SizedBox(width: 8),
+                      FilterChip(
+                        label: const Text('Medium (+2m)'),
+                        selected: _selectedPriority == ContactPriority.medium,
+                        onSelected: (_) => setState(
+                            () => _selectedPriority = ContactPriority.medium),
+                      ),
+                      const SizedBox(width: 8),
+                      FilterChip(
+                        label: const Text('Low (+5m)'),
+                        selected: _selectedPriority == ContactPriority.low,
+                        onSelected: (_) => setState(
+                            () => _selectedPriority = ContactPriority.low),
                       ),
                     ],
                   ),
@@ -214,113 +293,142 @@ class _SmsContactsSheetState extends State<SmsContactsSheet> {
           const Divider(height: 1),
 
           // ── Contact list ───────────────────────────────────────────────────────
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 320),
-            child: ListView.separated(
-              shrinkWrap: true,
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-              itemCount: contacts.length,
-              separatorBuilder: (_, __) =>
-                  const Divider(height: 1, indent: 72),
-              itemBuilder: (_, i) {
-                final contact = contacts[i];
-                final isSent = _sent.contains(i);
-                final hasValidPhone = _smsService.isValidPhone(contact.phone);
+          if (displayed.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.xl),
+              child: Center(
+                child: Text(
+                  'No contacts found in this priority tier.',
+                  style: AppTextStyles.bodyMedium
+                      .copyWith(color: cs.onSurfaceVariant),
+                ),
+              ),
+            )
+          else
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 320),
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                itemCount: displayed.length,
+                separatorBuilder: (_, __) =>
+                    const Divider(height: 1, indent: 72),
+                itemBuilder: (_, i) {
+                  final contact = displayed[i];
+                  final isSentLocally = _sent.contains(i);
+                  final isAlreadyAlerted =
+                      escalationProv.isContactAlerted(contact.phone);
+                  final isOpened = isSentLocally || isAlreadyAlerted;
+                  final hasValidPhone = _smsService.isValidPhone(contact.phone);
 
-                return ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.lg, vertical: 4),
-                  leading: CircleAvatar(
-                    backgroundColor: AppColors.primaryContainer,
-                    child: Text(
-                      contact.initials,
-                      style: AppTextStyles.labelMedium.copyWith(
-                        color: AppColors.primaryDark,
-                        fontWeight: FontWeight.w700,
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.lg, vertical: 4),
+                    leading: CircleAvatar(
+                      backgroundColor: AppColors.primaryContainer,
+                      child: Text(
+                        contact.initials,
+                        style: AppTextStyles.labelMedium.copyWith(
+                          color: AppColors.primaryDark,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
-                  ),
-                  title: Text(
-                    contact.name,
-                    style: AppTextStyles.titleSmall.copyWith(
-                      color: cs.onSurface,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  subtitle: Text(
-                    contact.relation.isNotEmpty
-                        ? '${contact.relation} · ${contact.phone}'
-                        : contact.phone,
-                    style: AppTextStyles.bodySmall
-                        .copyWith(color: cs.onSurfaceVariant),
-                  ),
-                  trailing: isSent
-                      ? Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: AppColors.success.withValues(alpha: 0.12),
-                            borderRadius:
-                                BorderRadius.circular(AppRadius.full),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.check_rounded,
-                                  color: AppColors.success, size: 14),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Opened',
-                                style: AppTextStyles.labelSmall.copyWith(
-                                  color: AppColors.success,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : !hasValidPhone
-                          ? Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 5),
-                              decoration: BoxDecoration(
-                                color: AppColors.error.withValues(alpha: 0.10),
-                                borderRadius:
-                                    BorderRadius.circular(AppRadius.full),
-                              ),
-                              child: Text(
-                                'Invalid #',
-                                style: AppTextStyles.labelSmall.copyWith(
-                                  color: AppColors.error,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            )
-                          : TextButton(
-                              onPressed: () => _sendSms(i),
-                              style: TextButton.styleFrom(
-                                backgroundColor: const Color(0xFFEDE9FE),
-                                foregroundColor: const Color(0xFF7C3AED),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(AppRadius.button),
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 6),
-                                minimumSize: Size.zero,
-                                tapTargetSize:
-                                    MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              child: const Text(
-                                'Send SMS',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.w700, fontSize: 12),
-                              ),
+                    title: Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            contact.name,
+                            style: AppTextStyles.titleSmall.copyWith(
+                              color: cs.onSurface,
+                              fontWeight: FontWeight.w600,
                             ),
-                );
-              },
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        _buildPriorityBadge(contact.priority),
+                      ],
+                    ),
+                    subtitle: Text(
+                      contact.relation.isNotEmpty
+                          ? '${contact.relation} · ${contact.phone}'
+                          : contact.phone,
+                      style: AppTextStyles.bodySmall
+                          .copyWith(color: cs.onSurfaceVariant),
+                    ),
+                    trailing: isOpened
+                        ? Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color:
+                                  AppColors.success.withValues(alpha: 0.12),
+                              borderRadius:
+                                  BorderRadius.circular(AppRadius.full),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.check_rounded,
+                                    color: AppColors.success, size: 14),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Opened',
+                                  style: TextStyle(
+                                    color: AppColors.success,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : !hasValidPhone
+                            ? Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: AppColors.error
+                                      .withValues(alpha: 0.10),
+                                  borderRadius:
+                                      BorderRadius.circular(AppRadius.full),
+                                ),
+                                child: const Text(
+                                  'Invalid #',
+                                  style: TextStyle(
+                                    color: AppColors.error,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              )
+                            : TextButton(
+                                onPressed: () => _sendSms(contact, i),
+                                style: TextButton.styleFrom(
+                                  backgroundColor: const Color(0xFFEDE9FE),
+                                  foregroundColor: const Color(0xFF7C3AED),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(
+                                        AppRadius.button),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 6),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                child: const Text(
+                                  'Send SMS',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12),
+                                ),
+                              ),
+                  );
+                },
+              ),
             ),
-          ),
 
           // ── Footer ────────────────────────────────────────────────────────────
           Padding(
@@ -352,16 +460,14 @@ class _SmsContactsSheetState extends State<SmsContactsSheet> {
 // SosSuccessSheet  — shared bottom-sheet shown after a successful SOS trigger
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Bottom sheet shown after the Dashboard SOS button is successfully triggered.
+/// Enhanced bottom sheet shown after SOS is triggered.
 ///
-/// Displays the recorded location, timestamp, and offers:
-/// - "Alert Emergency Contacts" → opens [SmsContactsSheet]
-/// - "Resolve Emergency" (if [sosDocId] is known)
-/// - "Go to Dashboard" / "Done"
-///
-/// Used by the Dashboard. The dedicated SOS screen uses its own AlertDialog
-/// (`_SosSuccessDialog`) which is intentionally kept intact.
-class SosSuccessSheet extends StatelessWidget {
+/// Displays:
+/// - Real-time GPS location tile.
+/// - Priority-based Escalation Status Timeline (T=0 High, T=2m Medium, T=5m Low).
+/// - "Alert Emergency Contacts" (opens [SmsContactsSheet]).
+/// - "Resolve Emergency / I'm Safe" (resolves active SOS session).
+class SosSuccessSheet extends StatefulWidget {
   const SosSuccessSheet({
     super.key,
     required this.mapsUrl,
@@ -385,6 +491,19 @@ class SosSuccessSheet extends StatelessWidget {
     required String? sosDocId,
     required VoidCallback onDone,
   }) {
+    // Start or join escalation session
+    if (sosDocId != null) {
+      final uid = context.read<UserProvider>().currentUid ?? '';
+      context.read<SosEscalationProvider>().startSession(
+            sosDocId: sosDocId,
+            userId: uid,
+            latitude: 0,
+            longitude: 0,
+            mapsUrl: mapsUrl ?? '',
+            startedAt: sosTime,
+          );
+    }
+
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -400,9 +519,16 @@ class SosSuccessSheet extends StatelessWidget {
     );
   }
 
+  @override
+  State<SosSuccessSheet> createState() => _SosSuccessSheetState();
+}
+
+class _SosSuccessSheetState extends State<SosSuccessSheet> {
+  bool _safetySheetShown = false;
+
   Future<void> _openMaps() async {
-    if (mapsUrl == null) return;
-    final uri = Uri.parse(mapsUrl!);
+    if (widget.mapsUrl == null) return;
+    final uri = Uri.parse(widget.mapsUrl!);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
@@ -419,9 +545,57 @@ class SosSuccessSheet extends StatelessWidget {
     return '$hour:$minute $period, ${dt.day} ${months[dt.month - 1]} ${dt.year}';
   }
 
+  String _formatCountdown(int remainingSeconds) {
+    if (remainingSeconds <= 0) return 'Alerting now';
+    final m = remainingSeconds ~/ 60;
+    final s = remainingSeconds % 60;
+    return 'in $m:${s.toString().padLeft(2, '0')}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final escalationProv = context.watch<SosEscalationProvider>();
+    final elapsed = escalationProv.elapsed;
+    final session = escalationProv.activeSession;
+
+    // Check if a safety check is pending and pop up the SafetyCheckSheet
+    if (escalationProv.isSafetyCheckPending &&
+        !_safetySheetShown &&
+        escalationProv.pendingEscalationPriority != null) {
+      _safetySheetShown = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final priority = escalationProv.pendingEscalationPriority!;
+        final sosProv = context.read<SosProvider>();
+        final nav = Navigator.of(context);
+
+        SafetyCheckSheet.show(
+          context,
+          escalationPriority: priority,
+          onSafe: () async {
+            _safetySheetShown = false;
+            await escalationProv.resolveEmergency();
+            if (widget.sosDocId != null) {
+              await sosProv.resolveLatest(widget.sosDocId!);
+            }
+            if (!mounted) return;
+            nav.pop();
+          },
+          onStillInDanger: () async {
+            _safetySheetShown = false;
+            await escalationProv.confirmStillInDanger();
+            if (!mounted) return;
+            _openSmsSheet(this.context, filterPriority: priority);
+          },
+        );
+      });
+    }
+
+    final isMediumAlerted = session?.isMediumAlerted ?? false;
+    final isLowAlerted = session?.isLowAlerted ?? false;
+    final mediumCountdown = 120 - elapsed.inSeconds;
+    final lowCountdown = 300 - elapsed.inSeconds;
 
     return Container(
       margin: const EdgeInsets.all(AppSpacing.md),
@@ -445,33 +619,33 @@ class SosSuccessSheet extends StatelessWidget {
             ),
           ),
 
-          // ── Success icon ───────────────────────────────────────────────────────
+          // ── Success icon + Title ───────────────────────────────────────────────
           Padding(
-            padding:
-                const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, 0),
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, 0),
             child: Column(
               children: [
                 Container(
                   width: 68,
                   height: 68,
                   decoration: BoxDecoration(
-                    color: _sosRed.withValues(alpha: 0.10),
+                    color: SosSuccessSheet._sosRed.withValues(alpha: 0.10),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(Icons.check_circle_rounded,
-                      color: _sosRed, size: 36),
+                      color: SosSuccessSheet._sosRed, size: 36),
                 ),
                 const SizedBox(height: AppSpacing.md),
                 Text(
-                  'SOS Alert Sent!',
+                  'SOS Alert Active',
                   style: AppTextStyles.titleLarge.copyWith(
                     fontWeight: FontWeight.w700,
                     color: cs.onSurface,
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 Text(
-                  'Your emergency has been recorded with your GPS location.',
+                  'Emergency recorded with live GPS. Priority escalation active.',
                   style: AppTextStyles.bodyMedium
                       .copyWith(color: AppColors.textSecondary),
                   textAlign: TextAlign.center,
@@ -479,7 +653,7 @@ class SosSuccessSheet extends StatelessWidget {
                 const SizedBox(height: AppSpacing.md),
 
                 // Location tile
-                if (mapsUrl != null)
+                if (widget.mapsUrl != null)
                   InkWell(
                     onTap: _openMaps,
                     borderRadius: BorderRadius.circular(AppRadius.md),
@@ -508,9 +682,86 @@ class SosSuccessSheet extends StatelessWidget {
                     ),
                   ),
 
+                const SizedBox(height: AppSpacing.md),
+
+                // ── Priority Escalation Timeline Card ────────────────────────
+                Container(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  decoration: BoxDecoration(
+                    color: cs.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(AppRadius.lg),
+                    border: Border.all(color: cs.outlineVariant),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Escalation Schedule',
+                            style: AppTextStyles.titleSmall.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: cs.onSurface,
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFEF2F2),
+                              borderRadius:
+                                  BorderRadius.circular(AppRadius.full),
+                            ),
+                            child: Text(
+                              'Active: ${elapsed.inMinutes}m ${(elapsed.inSeconds % 60).toString().padLeft(2, '0')}s',
+                              style: const TextStyle(
+                                color: AppColors.error,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+
+                      // T=0 High
+                      _buildTimelineRow(
+                        title: 'High Priority',
+                        status: 'Alerted (T=0)',
+                        isDone: true,
+                        color: const Color(0xFFDC2626),
+                      ),
+                      const SizedBox(height: 6),
+
+                      // T=2m Medium
+                      _buildTimelineRow(
+                        title: 'Medium Priority',
+                        status: isMediumAlerted
+                            ? 'Alerted'
+                            : _formatCountdown(mediumCountdown),
+                        isDone: isMediumAlerted,
+                        color: const Color(0xFFD97706),
+                      ),
+                      const SizedBox(height: 6),
+
+                      // T=5m Low
+                      _buildTimelineRow(
+                        title: 'Low Priority',
+                        status: isLowAlerted
+                            ? 'Alerted'
+                            : _formatCountdown(lowCountdown),
+                        isDone: isLowAlerted,
+                        color: const Color(0xFF4F46E5),
+                      ),
+                    ],
+                  ),
+                ),
+
                 const SizedBox(height: AppSpacing.sm),
                 Text(
-                  'Recorded at ${_formatTime(sosTime)}',
+                  'Triggered at ${_formatTime(widget.sosTime)}',
                   style: AppTextStyles.bodySmall
                       .copyWith(color: AppColors.textSecondary),
                   textAlign: TextAlign.center,
@@ -532,18 +783,14 @@ class SosSuccessSheet extends StatelessWidget {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.tonal(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      _openSmsSheet(context);
-                    },
+                    onPressed: () => _openSmsSheet(context),
                     style: FilledButton.styleFrom(
                       backgroundColor: const Color(0xFFEDE9FE),
                       foregroundColor: const Color(0xFF7C3AED),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(AppRadius.button),
                       ),
-                      padding:
-                          const EdgeInsets.symmetric(vertical: 14),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                     child: const Row(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -558,78 +805,72 @@ class SosSuccessSheet extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.sm),
 
-                // Resolve emergency (only if we have the doc ID)
-                if (sosDocId != null)
-                  Consumer<SosProvider>(
-                    builder: (ctx, sp, __) => SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton(
-                        onPressed: sp.isResolving
-                            ? null
-                            : () async {
-                                final ok =
-                                    await sp.resolveLatest(sosDocId!);
-                                if (!ctx.mounted) return;
-                                Navigator.of(ctx).pop();
-                                ScaffoldMessenger.of(ctx).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      ok
-                                          ? 'Emergency resolved. Stay safe!'
-                                          : sp.resolveError ??
-                                              'Could not resolve.',
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.w600),
-                                    ),
-                                    backgroundColor:
-                                        ok ? AppColors.success : AppColors.error,
-                                    behavior: SnackBarBehavior.floating,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                          BorderRadius.circular(AppRadius.md),
-                                    ),
-                                    duration: const Duration(seconds: 3),
-                                  ),
-                                );
-                              },
-                        style: OutlinedButton.styleFrom(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(AppRadius.button),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                        ),
-                        child: sp.isResolving
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Text('Resolve Emergency',
-                                style: TextStyle(fontWeight: FontWeight.w600)),
-                      ),
-                    ),
-                  ),
-
-                if (sosDocId != null) const SizedBox(height: AppSpacing.sm),
-
-                // Done / go to dashboard
+                // Resolve emergency / I'm Safe
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      onDone();
+                    onPressed: () async {
+                      await escalationProv.resolveEmergency();
+                      if (widget.sosDocId != null && context.mounted) {
+                        await context
+                            .read<SosProvider>()
+                            .resolveLatest(widget.sosDocId!);
+                      }
+                      if (context.mounted) {
+                        Navigator.of(context).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: const Text(
+                              "Emergency resolved. You're safe!",
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            backgroundColor: AppColors.success,
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(AppRadius.md),
+                            ),
+                          ),
+                        );
+                      }
                     },
                     style: FilledButton.styleFrom(
-                      backgroundColor: _sosRed,
+                      backgroundColor: const Color(0xFF16A34A),
+                      foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(AppRadius.button),
                       ),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
-                    child: const Text('Done',
-                        style: TextStyle(fontWeight: FontWeight.w700)),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.check_circle_rounded, size: 18),
+                        SizedBox(width: 8),
+                        Text("I'm Safe (Resolve Emergency)",
+                            style: TextStyle(fontWeight: FontWeight.w700)),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: AppSpacing.sm),
+
+                // Done / go to dashboard
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      widget.onDone();
+                    },
+                    style: OutlinedButton.styleFrom(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppRadius.button),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    child: const Text('Back to Dashboard',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
                   ),
                 ),
               ],
@@ -640,11 +881,43 @@ class SosSuccessSheet extends StatelessWidget {
     );
   }
 
-  void _openSmsSheet(BuildContext context) {
+  Widget _buildTimelineRow({
+    required String title,
+    required String status,
+    required bool isDone,
+    required Color color,
+  }) {
+    return Row(
+      children: [
+        Icon(
+          isDone ? Icons.check_circle_rounded : Icons.schedule_rounded,
+          size: 16,
+          color: isDone ? const Color(0xFF16A34A) : color,
+        ),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        ),
+        const Spacer(),
+        Text(
+          status,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: isDone ? const Color(0xFF16A34A) : color,
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _openSmsSheet(BuildContext context,
+      {ContactPriority? filterPriority}) {
     final contacts = context.read<ContactProvider>().contacts;
     final userName =
         context.read<UserProvider>().user?.name ?? 'A Nari Suraksha user';
-    final url = mapsUrl ??
+    final url = widget.mapsUrl ??
         'https://www.google.com/maps/search/?api=1&query=0.0,0.0';
 
     if (contacts.isEmpty) {
@@ -667,7 +940,8 @@ class SosSuccessSheet extends StatelessWidget {
       contacts: contacts,
       userName: userName,
       mapsUrl: url,
-      sosTime: sosTime,
+      sosTime: widget.sosTime,
+      initialPriorityFilter: filterPriority,
     );
   }
 }

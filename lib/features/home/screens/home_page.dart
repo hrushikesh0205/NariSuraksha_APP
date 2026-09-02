@@ -5,6 +5,7 @@ import 'package:nari_suraksha/features/sos/screens/sos_screen.dart';
 import 'package:nari_suraksha/features/emergency_contacts/screens/contacts_screen.dart';
 import 'package:nari_suraksha/features/profile/screens/profile_page.dart';
 import 'package:nari_suraksha/providers/contact_provider.dart';
+import 'package:nari_suraksha/providers/dashboard_provider.dart';
 import 'package:nari_suraksha/providers/user_provider.dart';
 import 'package:provider/provider.dart';
 
@@ -31,12 +32,13 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    // Subscribe ContactProvider to current user's contacts on mount.
+    // Subscribe ContactProvider and DashboardProvider alerts on mount.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final uid = context.read<UserProvider>().currentUid;
       if (uid != null) {
         context.read<ContactProvider>().subscribe(uid);
+        context.read<DashboardProvider>().refreshAlerts(uid);
       }
     });
   }
