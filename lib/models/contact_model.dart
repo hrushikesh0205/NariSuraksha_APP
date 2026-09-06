@@ -125,12 +125,24 @@ class EmergencyContact {
     final data = doc.data() ?? {};
     return EmergencyContact(
       id: doc.id,
-      userId: (data['userId'] as String?) ?? '',
-      name: (data['name'] as String?) ?? '',
-      phone: (data['phone'] as String?) ?? '',
-      relation: (data['relation'] as String?) ?? '',
+      userId: (data['userId'] as String?) ??
+          (data['uid'] as String?) ??
+          (data['user_id'] as String?) ??
+          '',
+      name: (data['name'] as String?) ??
+          (data['fullName'] as String?) ??
+          (data['displayName'] as String?) ??
+          '',
+      phone: (data['phone'] as String?) ??
+          (data['phoneNumber'] as String?) ??
+          (data['mobile'] as String?) ??
+          '',
+      relation: (data['relation'] as String?) ??
+          (data['relationship'] as String?) ??
+          '',
       priority: ContactPriority.fromString(data['priority'] as String?),
-      createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ??
+          (data['created_at'] as Timestamp?)?.toDate(),
     );
   }
 

@@ -12,6 +12,7 @@ import 'package:nari_suraksha/features/profile/screens/profile_page.dart';
 import 'package:nari_suraksha/features/settings/screens/settings_page.dart';
 import 'package:nari_suraksha/features/emergency_contacts/screens/contacts_screen.dart';
 import 'package:nari_suraksha/features/voice_detection/screens/voice_sos_screen.dart';
+import 'package:nari_suraksha/features/sos/screens/sos_screen.dart';
 
 /// Centralised routing authority for Nari Suraksha.
 ///
@@ -78,13 +79,25 @@ abstract final class AppRouter {
         return _build(settings, const VoiceSosScreen());
 
       case AppRoutes.liveTracking:
-        return _build(settings, const _ComingSoonPage(title: 'Live Tracking'));
+        return _build(
+          settings,
+          Scaffold(
+            backgroundColor: AppColors.background,
+            appBar: AppBar(
+              title: const Text('Live Tracking'),
+              backgroundColor: AppColors.primary,
+              foregroundColor: AppColors.onPrimary,
+            ),
+            body: const SafeArea(
+              child: SingleChildScrollView(
+                child: LocationBottomSheet(),
+              ),
+            ),
+          ),
+        );
 
       case AppRoutes.safeRoute:
         return _build(settings, const _ComingSoonPage(title: 'Safe Route'));
-
-      case AppRoutes.safetyTimer:
-        return _build(settings, const _ComingSoonPage(title: 'Safety Timer'));
 
       // ── Unknown ─────────────────────────────────────────────────────────────
       default:

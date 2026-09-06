@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:nari_suraksha/core/utils/initials_helper.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // UserModel
@@ -190,14 +191,8 @@ class UserModel {
     return parts.isNotEmpty ? parts.first : name;
   }
 
-  /// Returns initials for the avatar fallback (up to 2 chars).
-  String get initials {
-    final parts = name.trim().split(RegExp(r'\s+'));
-    if (parts.length >= 2) {
-      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    }
-    return name.isNotEmpty ? name[0].toUpperCase() : 'U';
-  }
+  /// Returns initials for the avatar using [InitialsHelper].
+  String get initials => InitialsHelper.getInitials(name);
 
   @override
   bool operator ==(Object other) =>

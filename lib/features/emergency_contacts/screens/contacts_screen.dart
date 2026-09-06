@@ -2,7 +2,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import 'package:nari_suraksha/core/services/sms_service.dart';
 import 'package:nari_suraksha/core/theme/app_colors.dart';
 import 'package:nari_suraksha/core/theme/app_text_styles.dart';
 import 'package:nari_suraksha/core/widgets/widgets.dart';
@@ -178,6 +180,144 @@ class _ContactsScreenState extends State<ContactsScreen>
     );
   }
 
+  static const _smsService = SmsService();
+
+  // ── Call Contact Action ───────────────────────────────────────────────────
+
+  Future<void> _handleCallContact(EmergencyContact contact) async {
+    final rawPhone = contact.phone.trim();
+    if (rawPhone.isEmpty || !_smsService.isValidPhone(rawPhone)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Invalid phone number for ${contact.name}.'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.md),
+          ),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    final normalized = _smsService.normalizePhone(rawPhone);
+    final uri = Uri(scheme: 'tel', path: normalized);
+
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Cannot open phone dialer on this device.'),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[ContactsScreen] Error launching call to $normalized: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Cannot open phone dialer on this device.'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.md),
+          ),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  // ── Message Contact Action ────────────────────────────────────────────────
+
+  Future<void> _handleMessageContact(EmergencyContact contact) async {
+    final rawPhone = contact.phone.trim();
+    if (rawPhone.isEmpty || !_smsService.isValidPhone(rawPhone)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Invalid phone number for ${contact.name}.'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.md),
+          ),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    final message = _smsService.buildQuickAlertMessage();
+
+    // 1. Attempt direct background SMS via native Android SmsManager
+    final result = await _smsService.sendDirectSms(
+      phone: rawPhone,
+      message: message,
+      contactName: contact.name,
+    );
+
+    if (!mounted) return;
+
+    if (result.result == SmsResult.sent) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Emergency message sent to ${contact.name}.'),
+          backgroundColor: AppColors.success,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.md),
+          ),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    // 2. Fallback: If permission was denied or direct send failed, open SMS composer
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Opening Messages to send the emergency message.'),
+        backgroundColor: AppColors.warning,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+        ),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+
+    final launched = await _smsService.openSmsComposer(
+      phone: rawPhone,
+      message: message,
+    );
+
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Unable to send message. Please try again.'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.md),
+          ),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
   // ── Contact options sheet ─────────────────────────────────────────────────
 
   void _showContactOptions(BuildContext sheetContext, EmergencyContact contact) {
@@ -190,42 +330,17 @@ class _ContactsScreenState extends State<ContactsScreen>
           icon: Icons.phone_rounded,
           label: 'Call',
           subtitle: contact.phone,
-          onTap: () {
-            Navigator.pop(sheetContext);
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Calling ${contact.name}…'),
-                behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                ),
-                duration: const Duration(seconds: 2),
-              ),
-            );
-          },
+          onTap: () => _handleCallContact(contact),
         ),
         SheetAction(
           icon: Icons.message_rounded,
           label: 'Send Message',
-          onTap: () {
-            Navigator.pop(sheetContext);
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Messaging ${contact.name}…'),
-                behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                ),
-                duration: const Duration(seconds: 2),
-              ),
-            );
-          },
+          onTap: () => _handleMessageContact(contact),
         ),
         SheetAction(
           icon: Icons.edit_rounded,
           label: 'Edit Contact',
           onTap: () {
-            Navigator.pop(sheetContext);
             _showEditContactSheet(contact);
           },
         ),
@@ -234,13 +349,19 @@ class _ContactsScreenState extends State<ContactsScreen>
           label: 'Remove Contact',
           isDangerous: true,
           onTap: () async {
-            // Dismiss the bottom sheet
-            Navigator.pop(sheetContext);
+            debugPrint('══════════════════════════════════════════════════════════');
+            debugPrint('👉 [UI: CONTACT OPTIONS] "Remove Contact" tapped');
+            debugPrint('   - contact.id: "${contact.id}"');
+            debugPrint('   - contact.name: "${contact.name}"');
+            debugPrint('   - contact.phone: "${contact.phone}"');
+            debugPrint('   - contact.userId: "${contact.userId}"');
+            debugPrint('   - contact.priority: ${contact.priority.name}');
 
             final messenger = ScaffoldMessenger.of(context);
             final contactProv = context.read<ContactProvider>();
             final userProv = context.read<UserProvider>();
 
+            debugPrint('👉 [UI: CONFIRMATION DIALOG] Displaying ConfirmationDialog.show...');
             final confirmed = await ConfirmationDialog.show(
               context: context,
               title: 'Remove Contact?',
@@ -250,12 +371,17 @@ class _ContactsScreenState extends State<ContactsScreen>
               isDangerous: true,
               icon: Icons.delete_outline_rounded,
             );
-            if (confirmed != true || !mounted) return;
+            debugPrint('👉 [UI: CONFIRMATION DIALOG] Dialog result: confirmed = $confirmed, mounted = $mounted');
+            if (confirmed != true || !mounted) {
+              debugPrint('⚠️ [UI: CANCELLED] Deletion was not confirmed or screen unmounted.');
+              return;
+            }
 
             final authUser = FirebaseAuth.instance.currentUser;
             final uid = authUser?.uid ?? userProv.currentUid;
+            debugPrint('👉 [UI: AUTH STATUS] FirebaseAuth uid: ${authUser?.uid}, userProvider uid: ${userProv.currentUid}');
             if (uid == null || uid.isEmpty) {
-              debugPrint('🔥 [ContactsScreen] Delete aborted: User is not authenticated.');
+              debugPrint('🔥 [UI: AUTH ERROR] Cannot delete: User is not authenticated.');
               messenger.showSnackBar(
                 SnackBar(
                   content: const Text('Cannot delete: You are not signed in.'),
@@ -269,16 +395,19 @@ class _ContactsScreenState extends State<ContactsScreen>
               return;
             }
 
-            debugPrint('🟡 [ContactsScreen] User confirmed deletion for contact "${contact.name}" (ID: ${contact.id})');
+            debugPrint('👉 [UI: CALLING PROVIDER] Calling contactProv.deleteContact(uid: $uid, contact: ${contact.name})...');
             final err = await contactProv.deleteContact(
               uid: uid,
               contact: contact,
             );
 
-            if (!mounted) return;
+            if (!mounted) {
+              debugPrint('⚠️ [UI: UNMOUNTED] Screen unmounted after deleteContact.');
+              return;
+            }
 
             if (err != null) {
-              debugPrint('🔥 [ContactsScreen] Delete returned error: $err');
+              debugPrint('🔥 [UI: DELETE FAILED] Provider returned error: $err');
               messenger.showSnackBar(
                 SnackBar(
                   content: Text(err),
@@ -287,26 +416,23 @@ class _ContactsScreenState extends State<ContactsScreen>
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(AppRadius.md),
                   ),
-                  duration: const Duration(seconds: 4),
                 ),
               );
             } else {
-              debugPrint('✅ [ContactsScreen] Contact deleted successfully from UI.');
+              debugPrint('✅ [UI: DELETE SUCCESS] Successfully deleted ${contact.name}. Showing SnackBar.');
               messenger.showSnackBar(
                 SnackBar(
-                  content: Text(
-                    '${contact.name} was removed from emergency contacts.',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
+                  content: Text('${contact.name} removed from emergency contacts.'),
                   backgroundColor: AppColors.success,
                   behavior: SnackBarBehavior.floating,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(AppRadius.md),
                   ),
-                  duration: const Duration(seconds: 3),
+                  duration: const Duration(seconds: 2),
                 ),
               );
             }
+            debugPrint('══════════════════════════════════════════════════════════');
           },
         ),
       ],
@@ -491,6 +617,8 @@ class _ContactsScreenState extends State<ContactsScreen>
                                     avatarFg: palette.fg,
                                     onLongPress: () =>
                                         _showContactOptions(context, contact),
+                                    onCall: () => _handleCallContact(contact),
+                                    onMessage: () => _handleMessageContact(contact),
                                   ),
                                 ),
                               );
@@ -664,6 +792,8 @@ class _ContactCard extends StatefulWidget {
     required this.avatarBg,
     required this.avatarFg,
     required this.onLongPress,
+    required this.onCall,
+    required this.onMessage,
   });
 
   final EmergencyContact contact;
@@ -671,6 +801,8 @@ class _ContactCard extends StatefulWidget {
   final Color avatarBg;
   final Color avatarFg;
   final VoidCallback onLongPress;
+  final VoidCallback onCall;
+  final VoidCallback onMessage;
 
   @override
   State<_ContactCard> createState() => _ContactCardState();
@@ -839,17 +971,7 @@ class _ContactCardState extends State<_ContactCard>
                         bgColor: AppColors.secondaryContainer,
                         onTap: () {
                           HapticFeedback.selectionClick();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Calling ${c.name}…'),
-                              behavior: SnackBarBehavior.floating,
-                              shape: RoundedRectangleBorder(
-                                borderRadius:
-                                    BorderRadius.circular(AppRadius.md),
-                              ),
-                              duration: const Duration(seconds: 2),
-                            ),
-                          );
+                          widget.onCall();
                         },
                       ),
                     ),
@@ -862,17 +984,7 @@ class _ContactCardState extends State<_ContactCard>
                         bgColor: cs.primaryContainer,
                         onTap: () {
                           HapticFeedback.selectionClick();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Messaging ${c.name}…'),
-                              behavior: SnackBarBehavior.floating,
-                              shape: RoundedRectangleBorder(
-                                borderRadius:
-                                    BorderRadius.circular(AppRadius.md),
-                              ),
-                              duration: const Duration(seconds: 2),
-                            ),
-                          );
+                          widget.onMessage();
                         },
                       ),
                     ),

@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:nari_suraksha/core/routes/app_routes.dart';
 import 'package:nari_suraksha/core/services/auth_service.dart';
 import 'package:nari_suraksha/core/theme/app_colors.dart';
 import 'package:nari_suraksha/core/theme/app_text_styles.dart';
-import 'package:nari_suraksha/providers/contact_provider.dart';
-import 'package:nari_suraksha/providers/user_provider.dart';
-import 'package:provider/provider.dart';
 
 /// Premium registration screen — bright, warm, friendly.
 ///
-/// Navigation logic: pushes `/home` on success, pops to login.
+/// Navigation logic: on successful account creation, shows success dialog,
+/// immediately signs out the new user, and navigates to [AppRoutes.login].
 class RegisterPage extends StatefulWidget {
-  const RegisterPage({super.key});
+  const RegisterPage({super.key, this.authService});
+
+  final AuthService? authService;
 
   @override
   State<RegisterPage> createState() => _RegisterPageState();
@@ -22,10 +23,16 @@ class _RegisterPageState extends State<RegisterPage> {
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
-  final _authService = AuthService();
+  late final AuthService _authService;
 
   bool _isLoading = false;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _authService = widget.authService ?? AuthService();
+  }
 
   @override
   void dispose() {
@@ -68,20 +75,30 @@ class _RegisterPageState extends State<RegisterPage> {
     });
 
     try {
-      final user = await _authService.registerWithEmailPassword(
+      await _authService.registerWithEmailPassword(
         name: name,
         email: email,
         password: password,
         phone: phone.isEmpty ? null : phone,
       );
 
+      // Immediately sign out newly created Firebase session.
+      // The user MUST NOT be automatically logged into the application.
+      await _authService.signOut();
+
       if (!mounted) return;
 
-      // Seed providers with the newly created user
-      context.read<UserProvider>().updateLocalUser(user);
-      context.read<ContactProvider>().subscribe(user.uid);
+      // Show success dialog before navigating away
+      await _showSuccessDialog();
 
-      Navigator.pushReplacementNamed(context, '/home');
+      if (!mounted) return;
+
+      // Navigate to Login page
+      if (Navigator.canPop(context)) {
+        Navigator.pop(context);
+      } else {
+        Navigator.pushReplacementNamed(context, AppRoutes.login);
+      }
     } catch (e, st) {
       debugPrint('🔥 RegisterPage._handleRegister error: $e\n$st');
       if (!mounted) return;
@@ -89,6 +106,98 @@ class _RegisterPageState extends State<RegisterPage> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  /// Displays the "Account Created" success dialog.
+  Future<void> _showSuccessDialog() async {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) => PopScope(
+        canPop: false,
+        child: Dialog(
+          backgroundColor: AppColors.surface,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.xxl),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.xl,
+              vertical: AppSpacing.xxl,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 76,
+                  height: 76,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.primaryContainer,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primary.withValues(alpha: 0.25),
+                        blurRadius: 24,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.check_circle_rounded,
+                    size: 42,
+                    color: AppColors.primaryDark,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                Text(
+                  'Account Created',
+                  style: AppTextStyles.headlineSmall.copyWith(
+                    color: AppColors.onBackground,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  'Your account has been created successfully.\n\nPlease login to continue.',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.onSurfaceVariant,
+                    height: 1.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: AppSpacing.xl),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.of(dialogCtx).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: AppColors.onPrimary,
+                      elevation: 2,
+                      shadowColor: AppColors.primary.withValues(alpha: 0.40),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppRadius.button),
+                      ),
+                    ),
+                    child: Text(
+                      'Continue',
+                      style: AppTextStyles.labelLarge.copyWith(
+                        color: AppColors.onPrimary,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override

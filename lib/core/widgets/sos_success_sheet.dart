@@ -494,13 +494,31 @@ class SosSuccessSheet extends StatefulWidget {
     // Start or join escalation session
     if (sosDocId != null) {
       final uid = context.read<UserProvider>().currentUid ?? '';
-      context.read<SosEscalationProvider>().startSession(
+      final userName = context.read<UserProvider>().user?.name ?? 'A Nari Suraksha user';
+      final contacts = context.read<ContactProvider>().contacts;
+      final escalation = context.read<SosEscalationProvider>();
+
+      escalation.updateContacts(contacts);
+      escalation.updateUserName(userName);
+
+      double lat = 0;
+      double lng = 0;
+      if (mapsUrl != null) {
+        final match = RegExp(r'q=([\d.-]+),([\d.-]+)').firstMatch(mapsUrl);
+        if (match != null) {
+          lat = double.tryParse(match.group(1) ?? '') ?? 0;
+          lng = double.tryParse(match.group(2) ?? '') ?? 0;
+        }
+      }
+
+      escalation.startSession(
             sosDocId: sosDocId,
             userId: uid,
-            latitude: 0,
-            longitude: 0,
+            latitude: lat,
+            longitude: lng,
             mapsUrl: mapsUrl ?? '',
             startedAt: sosTime,
+            triggerSource: 'dashboard',
           );
     }
 
@@ -585,8 +603,7 @@ class _SosSuccessSheetState extends State<SosSuccessSheet> {
           onStillInDanger: () async {
             _safetySheetShown = false;
             await escalationProv.confirmStillInDanger();
-            if (!mounted) return;
-            _openSmsSheet(this.context, filterPriority: priority);
+            // Automatically dispatches SMS in background — NO manual contact selection UI
           },
         );
       });
@@ -594,8 +611,9 @@ class _SosSuccessSheetState extends State<SosSuccessSheet> {
 
     final isMediumAlerted = session?.isMediumAlerted ?? false;
     final isLowAlerted = session?.isLowAlerted ?? false;
-    final mediumCountdown = 120 - elapsed.inSeconds;
-    final lowCountdown = 300 - elapsed.inSeconds;
+    final mediumCountdown = 240 - elapsed.inSeconds;
+    final lowCountdown = 480 - elapsed.inSeconds;
+    final policeCountdown = 720 - elapsed.inSeconds;
 
     return Container(
       margin: const EdgeInsets.all(AppSpacing.md),
@@ -728,16 +746,16 @@ class _SosSuccessSheetState extends State<SosSuccessSheet> {
 
                       // T=0 High
                       _buildTimelineRow(
-                        title: 'High Priority',
-                        status: 'Alerted (T=0)',
+                        title: 'High Priority (T=0)',
+                        status: 'Alerted',
                         isDone: true,
                         color: const Color(0xFFDC2626),
                       ),
                       const SizedBox(height: 6),
 
-                      // T=2m Medium
+                      // T=4m Medium
                       _buildTimelineRow(
-                        title: 'Medium Priority',
+                        title: 'Medium Priority (T=4m)',
                         status: isMediumAlerted
                             ? 'Alerted'
                             : _formatCountdown(mediumCountdown),
@@ -746,14 +764,25 @@ class _SosSuccessSheetState extends State<SosSuccessSheet> {
                       ),
                       const SizedBox(height: 6),
 
-                      // T=5m Low
+                      // T=8m Low
                       _buildTimelineRow(
-                        title: 'Low Priority',
+                        title: 'Low Priority (T=8m)',
                         status: isLowAlerted
                             ? 'Alerted'
                             : _formatCountdown(lowCountdown),
                         isDone: isLowAlerted,
                         color: const Color(0xFF4F46E5),
+                      ),
+                      const SizedBox(height: 6),
+
+                      // T=12m Police
+                      _buildTimelineRow(
+                        title: 'Police 112 (T=12m)',
+                        status: session?.policeCallAuthorized == true
+                            ? 'Authorized'
+                            : (policeCountdown <= 0 ? 'Pending Choice' : _formatCountdown(policeCountdown)),
+                        isDone: session?.policeCallAuthorized == true,
+                        color: const Color(0xFFDC2626),
                       ),
                     ],
                   ),
@@ -779,31 +808,54 @@ class _SosSuccessSheetState extends State<SosSuccessSheet> {
                 AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.lg),
             child: Column(
               children: [
-                // Alert Contacts via SMS
-                SizedBox(
+                // Live Automatic SMS Dispatch Status
+                Container(
                   width: double.infinity,
-                  child: FilledButton.tonal(
-                    onPressed: () => _openSmsSheet(context),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFFEDE9FE),
-                      foregroundColor: const Color(0xFF7C3AED),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(AppRadius.button),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.sms_rounded, size: 18),
-                        SizedBox(width: 8),
-                        Text('Alert Emergency Contacts',
-                            style: TextStyle(fontWeight: FontWeight.w700)),
-                      ],
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: escalationProv.isSendingSms
+                        ? const Color(0xFFFEF3C7)
+                        : const Color(0xFFF0FDF4),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                    border: Border.all(
+                      color: escalationProv.isSendingSms
+                          ? const Color(0xFFF59E0B)
+                          : const Color(0xFF86EFAC),
                     ),
                   ),
+                  child: Row(
+                    children: [
+                      if (escalationProv.isSendingSms)
+                        const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Color(0xFFD97706),
+                          ),
+                        )
+                      else
+                        const Icon(Icons.check_circle_rounded,
+                            size: 18, color: Color(0xFF16A34A)),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          escalationProv.isSendingSms
+                              ? 'Sending automatic background SMS...'
+                              : 'Automatic SMS dispatched to contacts.',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: escalationProv.isSendingSms
+                                ? const Color(0xFFB45309)
+                                : const Color(0xFF15803D),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: AppSpacing.sm),
+                const SizedBox(height: AppSpacing.md),
 
                 // Resolve emergency / I'm Safe
                 SizedBox(
@@ -911,37 +963,5 @@ class _SosSuccessSheetState extends State<SosSuccessSheet> {
       ],
     );
   }
-
-  void _openSmsSheet(BuildContext context,
-      {ContactPriority? filterPriority}) {
-    final contacts = context.read<ContactProvider>().contacts;
-    final userName =
-        context.read<UserProvider>().user?.name ?? 'A Nari Suraksha user';
-    final url = widget.mapsUrl ??
-        'https://www.google.com/maps/search/?api=1&query=0.0,0.0';
-
-    if (contacts.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text(
-          'No emergency contacts saved. Add contacts first.',
-          style: TextStyle(fontWeight: FontWeight.w600),
-        ),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: AppColors.warning,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.md)),
-        duration: const Duration(seconds: 3),
-      ));
-      return;
-    }
-
-    SmsContactsSheet.show(
-      context,
-      contacts: contacts,
-      userName: userName,
-      mapsUrl: url,
-      sosTime: widget.sosTime,
-      initialPriorityFilter: filterPriority,
-    );
-  }
 }
+

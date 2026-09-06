@@ -79,8 +79,22 @@ void main() async {
         ),
 
         // SOS Escalation session manager — single source of truth for active SOS
-        ChangeNotifierProvider<SosEscalationProvider>(
-          create: (_) => SosEscalationProvider(),
+        ChangeNotifierProxyProvider2<ContactProvider, UserProvider, SosEscalationProvider>(
+          create: (ctx) {
+            final escalation = SosEscalationProvider();
+            escalation.updateContacts(ctx.read<ContactProvider>().contacts);
+            escalation.updateUserName(ctx.read<UserProvider>().user?.name ?? 'A Nari Suraksha user');
+            return escalation;
+          },
+          update: (ctx, contactProvider, userProvider, previous) {
+            final escalation = previous ?? SosEscalationProvider();
+            escalation.updateContacts(contactProvider.contacts);
+            escalation.updateUserName(userProvider.user?.name ?? 'A Nari Suraksha user');
+            if (userProvider.currentUid != null && !escalation.hasActiveSession) {
+              escalation.checkAndResumeActiveSession(userProvider.currentUid!);
+            }
+            return escalation;
+          },
         ),
       ],
       child: const NarisurakshaApp(),

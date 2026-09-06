@@ -1,9 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nari_suraksha/core/utils/initials_helper.dart';
 import 'package:nari_suraksha/models/activity_log_model.dart';
 import 'package:nari_suraksha/models/contact_model.dart';
 import 'package:nari_suraksha/models/user_model.dart';
 import 'package:nari_suraksha/providers/contact_provider.dart';
 import 'package:nari_suraksha/providers/profile_provider.dart';
+import 'package:flutter/material.dart';
+import 'package:nari_suraksha/providers/settings_provider.dart';
 import 'package:nari_suraksha/repositories/activity_repository.dart';
 import 'package:nari_suraksha/repositories/contact_repository.dart';
 import 'package:nari_suraksha/repositories/user_repository.dart';
@@ -334,15 +337,103 @@ void main() {
       expect(err, isNotNull);
       expect(err, contains('Name cannot be empty'));
     });
+  });
 
-    test('pickAndUploadProfilePhoto handles empty/cancelled selection cleanly', () async {
-      final err = await profileProvider.pickAndUploadProfilePhoto(
-        uid: 'user_test',
-        simulatedCancel: true,
+  group('Initials Generation & Avatar Rules Tests', () {
+    test('Hrushikesh Bhoir -> HB', () {
+      expect(InitialsHelper.getInitials('Hrushikesh Bhoir'), 'HB');
+    });
+
+    test('Priya Sharma -> PS', () {
+      expect(InitialsHelper.getInitials('Priya Sharma'), 'PS');
+    });
+
+    test('Rahul -> R (single word)', () {
+      expect(InitialsHelper.getInitials('Rahul'), 'R');
+    });
+
+    test('A B -> AB', () {
+      expect(InitialsHelper.getInitials('A B'), 'AB');
+    });
+
+    test('Trims extra leading, trailing, and multiple internal spaces', () {
+      expect(InitialsHelper.getInitials('   Hrushikesh    Bhoir   '), 'HB');
+      expect(InitialsHelper.getInitials('  Priya     Sharma  '), 'PS');
+      expect(InitialsHelper.getInitials('   Rahul   '), 'R');
+    });
+
+    test('Multi-word names: first letter of first name and first letter of last name', () {
+      expect(InitialsHelper.getInitials('Dr. Priya K. Sharma'), 'DS');
+      expect(InitialsHelper.getInitials('Hrushikesh D. Bhoir'), 'HB');
+    });
+
+    test('Handles lowercase names properly', () {
+      expect(InitialsHelper.getInitials('priya sharma'), 'PS');
+      expect(InitialsHelper.getInitials('rahul'), 'R');
+    });
+
+    test('Fallback to U for empty, whitespace-only, or null names', () {
+      expect(InitialsHelper.getInitials(''), 'U');
+      expect(InitialsHelper.getInitials('   '), 'U');
+      expect(InitialsHelper.getInitials(null), 'U');
+    });
+
+    test('UserModel.initials getter reflects InitialsHelper output', () {
+      const user1 = UserModel(
+        uid: 'u1',
+        name: 'Hrushikesh Bhoir',
+        email: 'hb@example.com',
       );
+      expect(user1.initials, 'HB');
 
-      expect(err, isNull);
-      expect(profileProvider.isUploadingPhoto, isFalse);
+      const user2 = UserModel(
+        uid: 'u2',
+        name: 'Rahul',
+        email: 'r@example.com',
+      );
+      expect(user2.initials, 'R');
+
+      const user3 = UserModel(
+        uid: 'u3',
+        name: '   ',
+        email: 'blank@example.com',
+      );
+      expect(user3.initials, 'U');
+    });
+  });
+
+  group('SettingsProvider Defaults & Profile Cleanup Verification', () {
+    test('Default theme mode is ThemeMode.light', () {
+      final settings = SettingsProvider(userRepository: FakeUserRepository());
+      expect(settings.themeMode, ThemeMode.light);
+      expect(settings.themeModeLabel, 'Light mode');
+    });
+
+    test('ThemeMode can still be toggled to dark and system', () {
+      final settings = SettingsProvider(userRepository: FakeUserRepository());
+      settings.setThemeMode(ThemeMode.dark);
+      expect(settings.themeMode, ThemeMode.dark);
+      expect(settings.themeModeLabel, 'Dark mode');
+
+      settings.setThemeMode(ThemeMode.light);
+      expect(settings.themeMode, ThemeMode.light);
+      expect(settings.themeModeLabel, 'Light mode');
+
+      settings.setThemeMode(ThemeMode.system);
+      expect(settings.themeMode, ThemeMode.system);
+      expect(settings.themeModeLabel, 'System default');
+    });
+
+    test('Biometric and Language fields remain functional in provider for backward compatibility', () {
+      final settings = SettingsProvider(userRepository: FakeUserRepository());
+      expect(settings.biometricEnabled, isFalse);
+      expect(settings.language, 'English (India)');
+
+      settings.setLanguage('Hindi');
+      expect(settings.language, 'Hindi');
+
+      settings.setBiometricEnabled(true);
+      expect(settings.biometricEnabled, isTrue);
     });
   });
 }

@@ -35,6 +35,12 @@ class ContactProvider extends ChangeNotifier {
   StreamSubscription<List<EmergencyContact>>? _sub;
   String? _currentUid;
 
+  /// IDs of contacts currently being deleted — used to:
+  ///   1. Show a "deleting" indicator in the UI.
+  ///   2. Filter these contacts from stream updates so a stale
+  ///      Firestore cache snapshot does NOT re-add them.
+  final Set<String> _deletingIds = {};
+
   // ── Getters ─────────────────────────────────────────────────────────────────
 
   List<EmergencyContact> get contacts => List.unmodifiable(_contacts);
@@ -43,6 +49,10 @@ class ContactProvider extends ChangeNotifier {
   bool get isSaving => _isSaving;
   String? get errorMessage => _errorMessage;
   bool get hasReachedLimit => _contacts.length >= 5;
+
+  /// True if [contactId] is currently being deleted.
+  bool isDeleting(String? contactId) =>
+      contactId != null && _deletingIds.contains(contactId);
 
   /// Returns all High Priority contacts (T = 0 immediate alert).
   List<EmergencyContact> get highPriorityContacts =>
@@ -76,14 +86,27 @@ class ContactProvider extends ChangeNotifier {
     _sub?.cancel();
     _sub = _contactRepo.watchContacts(uid).listen(
       (list) {
-        debugPrint('[ContactProvider] Received ${list.length} contacts for uid: $uid');
-        _contacts = list;
+        debugPrint('📥 [PROVIDER STREAM LISTENER]');
+        debugPrint('   7. ContactProvider received ${list.length} contacts from stream for uid: $uid');
+        debugPrint('      - Deleting IDs currently tracked: $_deletingIds');
+        for (final c in list) {
+          debugPrint('      • [${c.id}] name: "${c.name}", phone: "${c.phone}", userId: "${c.userId}", priority: ${c.priority.name}');
+        }
+        // Filter out any contacts that are currently being deleted to prevent
+        // stale Firestore cache snapshots from re-adding them.
+        if (_deletingIds.isNotEmpty) {
+          _contacts = list.where((c) => !_deletingIds.contains(c.id)).toList();
+          debugPrint('   → Filtered ${_deletingIds.length} deleting contact(s). UI active contacts count: ${_contacts.length}');
+        } else {
+          _contacts = list;
+          debugPrint('   → No active deletions. UI active contacts count: ${_contacts.length}');
+        }
         _isLoading = false;
         _errorMessage = null;
         notifyListeners();
       },
       onError: (Object e) {
-        debugPrint('🔥 [ContactProvider] Error in watchContacts stream: $e');
+        debugPrint('🔥 [PROVIDER STREAM ERROR] Error in watchContacts stream: $e');
         _isLoading = false;
         _errorMessage = _friendlyError(e);
         notifyListeners();
@@ -99,6 +122,7 @@ class ContactProvider extends ChangeNotifier {
     _contacts = [];
     _isLoading = false;
     _errorMessage = null;
+    _deletingIds.clear();
     notifyListeners();
   }
 
@@ -174,7 +198,11 @@ class ContactProvider extends ChangeNotifier {
 
   // ── DELETE ──────────────────────────────────────────────────────────────────
 
-  /// Permanently deletes a contact after Firestore deletion completes.
+  /// Permanently deletes a contact from Firestore.
+  ///
+  /// The contact is removed from the UI via the Firestore stream — this method
+  /// does NOT do an optimistic local removal, which previously caused a race
+  /// condition where the stream would re-add the deleted contact from cache.
   ///
   /// Returns `null` on success, or an error string.
   Future<String?> deleteContact({
@@ -182,43 +210,61 @@ class ContactProvider extends ChangeNotifier {
     required EmergencyContact contact,
   }) async {
     final id = contact.id;
+    debugPrint('══════════════════════════════════════════════════════════');
+    debugPrint('👉 [PROVIDER: deleteContact CALLED]');
+    debugPrint('   Target UID: $uid');
+    debugPrint('   Contact ID: $id');
+    debugPrint('   Contact Name: "${contact.name}"');
+    debugPrint('   Contact Phone: "${contact.phone}"');
+    debugPrint('   Contact Priority: ${contact.priority.name}');
+    debugPrint('   Contact UserID: "${contact.userId}"');
+    debugPrint('   Contacts list count before delete: ${_contacts.length}');
+
     if (id == null || id.isEmpty) {
-      debugPrint('[ContactProvider] deleteContact error: contact.id is null or empty');
+      debugPrint('❌ [PROVIDER: deleteContact FAILED] contact.id is null or empty!');
       return 'Cannot delete contact: missing contact ID.';
     }
 
+    _deletingIds.add(id);
     _isSaving = true;
     _errorMessage = null;
+
+    // Immediately remove from local contacts list for responsive UI
+    _contacts = _contacts.where((c) => c.id != id).toList();
     notifyListeners();
 
     try {
-      debugPrint('[ContactProvider] Initiating deletion for contact "${contact.name}" (ID: $id) for user $uid');
-      // 1. Delete document from Firestore first (wait for successful completion)
+      debugPrint('⏳ [PROVIDER: deleteContact] Delegating to _contactRepo.deleteContact(uid: $uid, contactId: $id)...');
       await _contactRepo.deleteContact(uid, id);
 
-      // 2. Update local provider state only after Firestore delete succeeds
-      _contacts = _contacts.where((c) => c.id != id).toList();
-
-      // 3. Log activity
+      // Log activity
       await _activityRepo.logActivity(
         uid: uid,
         type: ActivityLogType.contactDeleted,
         description: 'Emergency contact "${contact.name}" was removed.',
       );
 
-      debugPrint('[ContactProvider] Deletion complete. Remaining contacts: ${_contacts.length}');
-      notifyListeners();
+      debugPrint('✅ [PROVIDER: deleteContact] Deletion succeeded. Remaining active local contacts: ${_contacts.length}');
       return null;
     } catch (e) {
-      debugPrint('[ContactProvider] Deletion aborted due to error: $e');
+      debugPrint('❌ [PROVIDER: deleteContact] Deletion threw error: $e');
       final errorMsg = _friendlyError(e);
       _errorMessage = errorMsg;
-      // Do not remove contact from _contacts list if deletion failed
+      // Revert local removal since deletion failed
+      if (!_contacts.any((c) => c.id == id)) {
+        _contacts = [..._contacts, contact];
+      }
+      // Remove from _deletingIds so stream can track it again
+      _deletingIds.remove(id);
       notifyListeners();
       return errorMsg;
     } finally {
       _isSaving = false;
+      Future.delayed(const Duration(seconds: 2), () {
+        _deletingIds.remove(id);
+      });
       notifyListeners();
+      debugPrint('══════════════════════════════════════════════════════════');
     }
   }
 

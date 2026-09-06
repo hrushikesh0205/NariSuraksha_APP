@@ -31,11 +31,13 @@ dependencies:
   # ── URL Launcher (phone dialler, maps share) ────────────────────────────────
   url_launcher: ^6.3.0
 
+  # ── Share sheet (native Android/iOS share dialog) ───────────────────────────
+  share_plus: ^10.1.4
+
   # ── Utilities ───────────────────────────────────────────────────────────────
   intl: ^0.20.2
   internet_connection_checker_plus: ^3.1.1
   speech_to_text: ^7.4.0
-  image_picker: ^1.1.2
 
 dev_dependencies:
   flutter_test:

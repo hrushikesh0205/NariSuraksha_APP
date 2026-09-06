@@ -1,12 +1,45 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nari_suraksha/core/services/sms_service.dart';
 import 'package:nari_suraksha/models/activity_log_model.dart';
 import 'package:nari_suraksha/models/contact_model.dart';
 import 'package:nari_suraksha/models/sos_record_model.dart';
 import 'package:nari_suraksha/providers/sos_escalation_provider.dart';
 import 'package:nari_suraksha/repositories/activity_repository.dart';
+import 'package:nari_suraksha/repositories/contact_repository.dart';
 import 'package:nari_suraksha/repositories/sos_repository.dart';
 
 // ── Test Fakes ───────────────────────────────────────────────────────────────
+
+class FakeContactRepository implements ContactRepository {
+  List<EmergencyContact> contacts = [];
+
+  @override
+  Stream<List<EmergencyContact>> watchContacts(String uid) {
+    return Stream.value(contacts);
+  }
+
+  @override
+  Future<List<EmergencyContact>> getContacts(String uid) async {
+    return contacts;
+  }
+
+  @override
+  Future<EmergencyContact> addContact(String uid, EmergencyContact contact) async {
+    contacts.add(contact);
+    return contact;
+  }
+
+  @override
+  Future<void> updateContact(String uid, EmergencyContact contact) async {
+    final idx = contacts.indexWhere((c) => c.id == contact.id);
+    if (idx != -1) contacts[idx] = contact;
+  }
+
+  @override
+  Future<void> deleteContact(String uid, String contactId) async {
+    contacts.removeWhere((c) => c.id == contactId);
+  }
+}
 
 class FakeSosRepository implements SosRepository {
   final List<SosRecordModel> records = [];
@@ -14,6 +47,8 @@ class FakeSosRepository implements SosRepository {
   SosStatus? updatedStatus;
   String? updatedLevel;
   DateTime? updatedAlertedAt;
+  Map<String, String>? updatedSmsResults;
+  bool? updatedPoliceCallAuthorized;
 
   @override
   Future<String> createSosRecord(SosRecordModel record) async {
@@ -39,8 +74,45 @@ class FakeSosRepository implements SosRepository {
   }
 
   @override
+  Future<void> updateSmsResults(
+    String docId,
+    Map<String, String> results,
+  ) async {
+    updatedDocId = docId;
+    updatedSmsResults = results;
+  }
+
+  @override
+  Future<void> updatePoliceCallStatus(
+    String docId, {
+    required bool authorized,
+  }) async {
+    updatedDocId = docId;
+    updatedPoliceCallAuthorized = authorized;
+  }
+
+  @override
   Future<List<SosRecordModel>> getRecentSos(String uid, {int limit = 5}) async {
     return records;
+  }
+}
+
+class FakeSmsService extends SmsService {
+  final List<String> sentPhones = [];
+
+  @override
+  Future<SmsSendResult> sendDirectSms({
+    required String phone,
+    required String message,
+    String contactName = '',
+  }) async {
+    final normalized = normalizePhone(phone);
+    sentPhones.add(normalized);
+    return SmsSendResult(
+      phone: normalized,
+      contactName: contactName,
+      result: SmsResult.sent,
+    );
   }
 }
 
@@ -185,14 +257,17 @@ void main() {
   group('SosEscalationProvider Lifecycle & Timer Tests', () {
     late FakeSosRepository fakeSosRepo;
     late FakeActivityRepository fakeActivityRepo;
+    late FakeContactRepository fakeContactRepo;
     late SosEscalationProvider provider;
 
     setUp(() {
       fakeSosRepo = FakeSosRepository();
       fakeActivityRepo = FakeActivityRepository();
+      fakeContactRepo = FakeContactRepository();
       provider = SosEscalationProvider(
         sosRepository: fakeSosRepo,
         activityRepository: fakeActivityRepo,
+        contactRepository: fakeContactRepo,
       );
     });
 
@@ -298,6 +373,207 @@ void main() {
       expect(provider.isContactAlerted('+91 98765 43210'), isTrue);
       expect(provider.isContactAlerted('919876543210'), isTrue);
       expect(provider.isContactAlerted('+91 98765 43211'), isFalse);
+    });
+
+    test('startSession auto-sends SMS to High priority contacts', () async {
+      final fakeSms = FakeSmsService();
+      final p = SosEscalationProvider(
+        sosRepository: fakeSosRepo,
+        activityRepository: fakeActivityRepo,
+        contactRepository: fakeContactRepo,
+        smsService: fakeSms,
+      );
+
+      final contacts = [
+        const EmergencyContact(
+          id: 'c1',
+          userId: 'user_abc',
+          name: 'Mom',
+          phone: '+91 98765 00001',
+          relation: 'Mother',
+          priority: ContactPriority.high,
+        ),
+        const EmergencyContact(
+          id: 'c2',
+          userId: 'user_abc',
+          name: 'Dad',
+          phone: '+91 98765 00002',
+          relation: 'Father',
+          priority: ContactPriority.medium,
+        ),
+      ];
+
+      p.updateContacts(contacts);
+      p.updateUserName('Priya Sharma');
+
+      p.startSession(
+        sosDocId: 'sos_auto_sms_test',
+        userId: 'user_abc',
+        latitude: 12.9716,
+        longitude: 77.5946,
+        mapsUrl: 'https://maps.google.com/?q=12.9716,77.5946',
+      );
+
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      expect(fakeSms.sentPhones, contains('+919876500001'));
+      expect(fakeSms.sentPhones, isNot(contains('+919876500002')));
+      expect(fakeSosRepo.updatedSmsResults, isNotNull);
+      expect(fakeSosRepo.updatedSmsResults!['+919876500001'], 'sent');
+
+      p.dispose();
+    });
+
+    test('escalateTo sends SMS to next priority contacts', () async {
+      final fakeSms = FakeSmsService();
+      final p = SosEscalationProvider(
+        sosRepository: fakeSosRepo,
+        activityRepository: fakeActivityRepo,
+        contactRepository: fakeContactRepo,
+        smsService: fakeSms,
+      );
+
+      final contacts = [
+        const EmergencyContact(
+          id: 'c1',
+          userId: 'user_abc',
+          name: 'Mom',
+          phone: '+91 98765 00001',
+          relation: 'Mother',
+          priority: ContactPriority.high,
+        ),
+        const EmergencyContact(
+          id: 'c2',
+          userId: 'user_abc',
+          name: 'Dad',
+          phone: '+91 98765 00002',
+          relation: 'Father',
+          priority: ContactPriority.medium,
+        ),
+      ];
+
+      p.updateContacts(contacts);
+      p.startSession(
+        sosDocId: 'sos_escalate_sms',
+        userId: 'user_abc',
+        latitude: 12.9716,
+        longitude: 77.5946,
+        mapsUrl: 'https://maps.google.com/?q=12.9716,77.5946',
+      );
+
+      await Future.delayed(const Duration(milliseconds: 50));
+      fakeSms.sentPhones.clear();
+
+      await p.escalateTo(ContactPriority.medium);
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      expect(fakeSms.sentPhones, contains('+919876500002'));
+      expect(p.activeSession?.isMediumAlerted, isTrue);
+
+      p.dispose();
+    });
+
+    test('authorizePoliceCall and declinePoliceCall update repository', () async {
+      provider.startSession(
+        sosDocId: 'sos_police_test',
+        userId: 'user_abc',
+        latitude: 12.9716,
+        longitude: 77.5946,
+        mapsUrl: 'https://maps.google.com/?q=12.9716,77.5946',
+      );
+
+      await provider.authorizePoliceCall();
+      expect(provider.activeSession?.policeCallAuthorized, isTrue);
+      expect(fakeSosRepo.updatedPoliceCallAuthorized, isTrue);
+      expect(fakeActivityRepo.logs, contains('User authorized calling emergency police/112.'));
+
+      await provider.declinePoliceCall();
+      expect(provider.activeSession?.policeCallAuthorized, isFalse);
+      expect(fakeSosRepo.updatedPoliceCallAuthorized, isFalse);
+      expect(provider.hasActiveSession, isFalse);
+    });
+
+    test('Timeline constants match required T=4m, T=8m, T=12m escalation', () {
+      expect(SosEscalationProvider.mediumThresholdSeconds, 240); // 4 minutes
+      expect(SosEscalationProvider.lowThresholdSeconds, 480);    // 8 minutes
+      expect(SosEscalationProvider.policeThresholdSeconds, 720); // 12 minutes
+      expect(SosEscalationProvider.safetyCheckTimeoutSeconds, 30);
+    });
+
+    test('Duplicate phone number across tiers is not alerted twice', () async {
+      final fakeSms = FakeSmsService();
+      final p = SosEscalationProvider(
+        sosRepository: fakeSosRepo,
+        activityRepository: fakeActivityRepo,
+        contactRepository: fakeContactRepo,
+        smsService: fakeSms,
+      );
+
+      final contacts = [
+        const EmergencyContact(
+          id: 'c1',
+          userId: 'user_dup',
+          name: 'Primary Phone',
+          phone: '+91 99999 11111',
+          relation: 'Friend',
+          priority: ContactPriority.high,
+        ),
+        const EmergencyContact(
+          id: 'c2',
+          userId: 'user_dup',
+          name: 'Duplicate Phone In Medium',
+          phone: '+91 99999 11111', // Same number in Medium
+          relation: 'Friend 2',
+          priority: ContactPriority.medium,
+        ),
+      ];
+
+      p.updateContacts(contacts);
+      p.startSession(
+        sosDocId: 'sos_dup_test',
+        userId: 'user_dup',
+        latitude: 12.9716,
+        longitude: 77.5946,
+        mapsUrl: 'https://maps.google.com/?q=12.9716,77.5946',
+      );
+
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(fakeSms.sentPhones, ['+919999911111']);
+
+      // Escalate to Medium
+      fakeSms.sentPhones.clear();
+      await p.escalateTo(ContactPriority.medium);
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      // Must NOT send again to the same phone number
+      expect(fakeSms.sentPhones, isEmpty);
+      p.dispose();
+    });
+
+    test('resumeActiveSession restores original timestamp and alerted state without resetting', () {
+      final fiveMinAgo = DateTime.now().subtract(const Duration(minutes: 5));
+      final record = SosRecordModel(
+        id: 'sos_resumed_doc',
+        userId: 'user_resume',
+        latitude: 19.0760,
+        longitude: 72.8777,
+        timestamp: fiveMinAgo,
+        status: SosStatus.active,
+        escalationLevel: 'medium',
+        highAlertedAt: fiveMinAgo,
+        mediumAlertedAt: fiveMinAgo.add(const Duration(minutes: 4)),
+        smsResults: const {'+919876500001': 'sent'},
+      );
+
+      final resumed = provider.resumeActiveSession(record);
+      expect(resumed, isNotNull);
+      expect(resumed!.sosDocId, 'sos_resumed_doc');
+      expect(resumed.startedAt, fiveMinAgo);
+      expect(resumed.elapsed.inMinutes, greaterThanOrEqualTo(5));
+      expect(resumed.isHighAlerted, isTrue);
+      expect(resumed.isMediumAlerted, isTrue);
+      expect(resumed.isLowAlerted, isFalse);
+      expect(resumed.alertedContactPhones, contains('+919876500001'));
     });
   });
 }

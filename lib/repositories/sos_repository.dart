@@ -65,20 +65,57 @@ class SosRepository {
     }
   }
 
+  /// Updates the per-contact SMS send results in the SOS record.
+  Future<void> updateSmsResults(
+    String docId,
+    Map<String, String> smsResults,
+  ) async {
+    try {
+      await _collection.doc(docId).update({
+        'smsResults': smsResults,
+      });
+    } on FirebaseException catch (e) {
+      throw Exception(
+          'Failed to update SMS results [${e.code}]: ${e.message}');
+    }
+  }
+
+  /// Updates whether the user authorized calling police at worst-case stage.
+  Future<void> updatePoliceCallStatus(
+    String docId, {
+    required bool authorized,
+  }) async {
+    try {
+      await _collection.doc(docId).update({
+        'policeCallAuthorized': authorized,
+      });
+    } on FirebaseException catch (e) {
+      throw Exception(
+          'Failed to update police call status [${e.code}]: ${e.message}');
+    }
+  }
+
   // ── Read ───────────────────────────────────────────────────────────────────
 
   /// Fetches the [limit] most recent SOS records for a given user.
+  ///
+  /// NOTE: We intentionally omit `.orderBy('timestamp')` here to avoid
+  /// requiring a Firestore composite index on (userId, timestamp).
+  /// Records are instead sorted in memory after fetching — this is safe
+  /// because we only ever fetch a small [limit] (default 5).
   Future<List<SosRecordModel>> getRecentSos(String uid, {int limit = 5}) async {
     try {
       final snap = await _collection
           .where('userId', isEqualTo: uid)
-          .orderBy('timestamp', descending: true)
           .limit(limit)
           .get();
-      return snap.docs
+      final records = snap.docs
           .map((d) => SosRecordModel.fromFirestore(
               d as DocumentSnapshot<Map<String, dynamic>>))
           .toList();
+      // Sort newest-first in Dart — avoids composite index requirement.
+      records.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      return records;
     } on FirebaseException catch (e) {
       throw Exception('Failed to fetch SOS history [${e.code}]: ${e.message}');
     }

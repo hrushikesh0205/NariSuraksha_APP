@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <!-- Voice SOS emergency keyword detection -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!-- Automatic emergency SMS sending during SOS escalation -->
+    <uses-permission android:name="android.permission.SEND_SMS"/>
     <!-- NOTE: ACCESS_BACKGROUND_LOCATION is intentionally omitted until the
          Safety Timer foreground service is implemented. Adding it prematurely
          triggers Play Store review requirements. -->

@@ -1,54 +1,40 @@
 import 'package:flutter/material.dart';
-import 'package:nari_suraksha/core/theme/app_colors.dart';
 import 'package:nari_suraksha/core/theme/app_text_styles.dart';
+import 'package:nari_suraksha/core/utils/initials_helper.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CircularAvatarWidget
+// InitialsAvatarWidget / CircularAvatarWidget
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// A circular avatar with graceful fallback behaviour:
-///   1. Displays [imageUrl] if provided and loadable.
-///   2. Falls back to initials derived from [name].
-///   3. Falls back to a generic person icon.
+/// A clean, circular avatar that renders dynamic user initials using [InitialsHelper].
+///
+/// Rules:
+/// - "Hrushikesh Bhoir" → "HB"
+/// - "Priya Sharma" → "PS"
+/// - "Rahul" → "R"
+/// - "A B" → "AB"
+/// - Fallback to "U" if name is null, empty, or whitespace-only.
 ///
 /// Supports an optional [badge] (e.g. an online-indicator dot) overlaid
 /// at the bottom-right corner.
 ///
 /// ```dart
-/// // Network image
-/// CircularAvatarWidget(
-///   name: 'Priya Sharma',
-///   imageUrl: 'https://...',
-///   radius: 28,
-/// )
-///
-/// // Initials fallback
-/// CircularAvatarWidget(name: 'Priya Sharma', radius: 24)
-///
-/// // With online badge
-/// CircularAvatarWidget(
-///   name: 'Mom',
-///   radius: 24,
-///   badge: CircleAvatar(radius: 6, backgroundColor: AppColors.success),
-/// )
+/// InitialsAvatarWidget(name: 'Hrushikesh Bhoir', radius: 24)
 /// ```
 class CircularAvatarWidget extends StatelessWidget {
   const CircularAvatarWidget({
     super.key,
     this.name,
-    this.imageUrl,
     this.radius = 24.0,
     this.badge,
     this.backgroundColor,
     this.foregroundColor,
+    this.textStyle,
     this.onTap,
   });
 
-  /// Used to derive initials when [imageUrl] is absent.
+  /// The user's name used to generate initials.
   final String? name;
-
-  /// Network image URL.
-  final String? imageUrl;
 
   /// Avatar radius (default 24 dp).
   final double radius;
@@ -59,20 +45,14 @@ class CircularAvatarWidget extends StatelessWidget {
   /// Avatar background colour — defaults to `colorScheme.primaryContainer`.
   final Color? backgroundColor;
 
-  /// Initials / icon colour — defaults to `colorScheme.onPrimaryContainer`.
+  /// Initials colour — defaults to `colorScheme.onPrimaryContainer`.
   final Color? foregroundColor;
+
+  /// Optional custom text style for initials.
+  final TextStyle? textStyle;
 
   /// Optional tap callback.
   final VoidCallback? onTap;
-
-  // ── Helpers ─────────────────────────────────────────────────────────────────
-
-  String _initials() {
-    if (name == null || name!.trim().isEmpty) return '';
-    final parts = name!.trim().split(RegExp(r'\s+'));
-    if (parts.length == 1) return parts[0][0].toUpperCase();
-    return '${parts[0][0]}${parts.last[0]}'.toUpperCase();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -80,41 +60,21 @@ class CircularAvatarWidget extends StatelessWidget {
     final Color bg = backgroundColor ?? cs.primaryContainer;
     final Color fg = foregroundColor ?? cs.onPrimaryContainer;
 
-    final String initials = _initials();
+    final String initials = InitialsHelper.getInitials(name);
 
-    Widget avatar;
-
-    if (imageUrl != null) {
-      avatar = CircleAvatar(
-        radius: radius,
-        backgroundColor: bg,
-        backgroundImage: NetworkImage(imageUrl!),
-        onBackgroundImageError: (_, __) {},
-        child: null,
-      );
-    } else if (initials.isNotEmpty) {
-      avatar = CircleAvatar(
-        radius: radius,
-        backgroundColor: bg,
-        child: Text(
-          initials,
-          style: AppTextStyles.titleMedium.copyWith(
-            color: fg,
-            fontSize: radius * 0.65,
-          ),
-        ),
-      );
-    } else {
-      avatar = CircleAvatar(
-        radius: radius,
-        backgroundColor: bg,
-        child: Icon(
-          Icons.person_rounded,
-          color: AppColors.primary,
-          size: radius,
-        ),
-      );
-    }
+    Widget avatar = CircleAvatar(
+      radius: radius,
+      backgroundColor: bg,
+      child: Text(
+        initials,
+        style: textStyle ??
+            AppTextStyles.titleMedium.copyWith(
+              color: fg,
+              fontWeight: FontWeight.w700,
+              fontSize: radius * 0.65,
+            ),
+      ),
+    );
 
     if (onTap != null) {
       avatar = GestureDetector(onTap: onTap, child: avatar);
@@ -135,3 +95,7 @@ class CircularAvatarWidget extends StatelessWidget {
     );
   }
 }
+
+/// Type alias allowing both `InitialsAvatarWidget` and `CircularAvatarWidget`
+/// to be used interchangeably across the app.
+typedef InitialsAvatarWidget = CircularAvatarWidget;

@@ -344,30 +344,8 @@ class _SettingsPageState extends State<SettingsPage> {
 
               // ── Security ─────────────────────────────────────────────────────────
               const _SectionHeader(label: 'Security'),
-              SwitchListTile(
-                secondary: const Icon(Icons.fingerprint_rounded,
-                    color: AppColors.primary),
-                title: const Text('Biometric Lock'),
-                subtitle: const Text('Require fingerprint / face to open app'),
-                value: settings.biometricEnabled,
-                activeThumbColor: AppColors.primary,
-                onChanged: (v) {
-                  settings.setBiometricEnabled(v, uid: uid);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(v
-                          ? 'Biometric lock enabled'
-                          : 'Biometric lock disabled'),
-                      backgroundColor: AppColors.success,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(AppRadius.md),
-                      ),
-                      duration: const Duration(seconds: 2),
-                    ),
-                  );
-                },
-              ),
+
+
               ListTile(
                 leading:
                     const Icon(Icons.key_outlined, color: AppColors.primary),

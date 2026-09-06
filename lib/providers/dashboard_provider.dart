@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:nari_suraksha/core/services/auth_service.dart';
 import 'package:nari_suraksha/core/services/connectivity_service.dart';
 import 'package:nari_suraksha/core/services/location_service.dart';
+import 'package:nari_suraksha/core/services/sms_service.dart';
 import 'package:nari_suraksha/models/activity_log_model.dart';
 import 'package:nari_suraksha/models/sos_record_model.dart';
 import 'package:nari_suraksha/providers/user_provider.dart';
@@ -59,12 +60,14 @@ class DashboardProvider extends ChangeNotifier {
     AuthService? authService,
     SosRepository? sosRepository,
     ActivityRepository? activityRepository,
+    SmsService? smsService,
     UserProvider? userProvider,
   })  : _locationService = locationService ?? LocationService(),
         _connectivityService = connectivityService ?? ConnectivityService(),
         _authService = authService ?? AuthService(),
         _sosRepository = sosRepository ?? SosRepository(),
         _activityRepository = activityRepository ?? ActivityRepository(),
+        _smsService = smsService ?? const SmsService(),
         _userProvider = userProvider;
 
   final LocationService _locationService;
@@ -72,6 +75,7 @@ class DashboardProvider extends ChangeNotifier {
   final AuthService _authService;
   final SosRepository _sosRepository;
   final ActivityRepository _activityRepository;
+  final SmsService _smsService;
   final UserProvider? _userProvider;
 
   // ── State ──────────────────────────────────────────────────────────────────
@@ -191,7 +195,35 @@ class DashboardProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // 1. Get location (allow fallback to last-known if fresh fix times out)
+      // 1. One Active Session Rule: Check if an active, unresolved SOS already exists
+      try {
+        final recents = await _sosRepository.getRecentSos(uid, limit: 1);
+        if (recents.isNotEmpty) {
+          final active = recents.first;
+          if (active.status == SosStatus.active && active.resolvedAt == null) {
+            debugPrint(
+              'ℹ️ DashboardProvider: Active SOS (${active.id}) already in progress. Reusing without creating duplicate.',
+            );
+            return SosTriggerResult.success(
+              active.latitude,
+              active.longitude,
+              docId: active.id,
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('⚠️ DashboardProvider: check existing active SOS failed: $e');
+      }
+
+      // Proactively check/request SMS permission
+      try {
+        final perm = await _smsService.checkSmsPermission();
+        if (!perm['granted']!) {
+          await _smsService.requestSmsPermission();
+        }
+      } catch (_) {}
+
+      // 2. Get location (allow fallback to last-known if fresh fix times out)
       Position? position;
       try {
         position = await _locationService.getCurrentPosition();

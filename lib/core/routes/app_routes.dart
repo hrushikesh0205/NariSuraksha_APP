@@ -48,9 +48,6 @@ abstract final class AppRoutes {
   /// Safe route planning screen.
   static const String safeRoute = '/safe-route';
 
-  /// Safety timer screen.
-  static const String safetyTimer = '/safety-timer';
-
   /// Voice SOS keyword detection screen.
   static const String voiceSos = '/voice-sos';
 }

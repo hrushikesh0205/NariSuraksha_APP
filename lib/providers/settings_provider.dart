@@ -25,7 +25,7 @@ class SettingsProvider extends ChangeNotifier {
 
   // ── State ───────────────────────────────────────────────────────────────────
 
-  ThemeMode _themeMode = ThemeMode.system;
+  ThemeMode _themeMode = ThemeMode.light;
   bool _notificationsEnabled = true;
   bool _locationSharingEnabled = true;
   bool _voiceSosEnabled = true;

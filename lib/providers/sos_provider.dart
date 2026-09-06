@@ -59,7 +59,8 @@ class SosProvider extends ChangeNotifier {
     try {
       _history = await _sosRepository.getRecentSos(uid, limit: 5);
       _historyError = null;
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('🔥 SosProvider.loadHistory error: $e\n$st');
       _historyError = _friendlyError(e);
       _history = [];
     } finally {
@@ -113,14 +114,21 @@ class SosProvider extends ChangeNotifier {
   String _friendlyError(Object e) {
     final msg = e.toString().toLowerCase();
     if (msg.contains('network') || msg.contains('unavailable')) {
-      return 'No internet connection.';
+      return 'No internet connection. Check your data connection and retry.';
     }
     if (msg.contains('permission-denied') || msg.contains('permission_denied')) {
-      return 'Firestore permission denied. Enable Firestore in Firebase Console.';
+      return 'Access denied. Please contact support.';
+    }
+    if (msg.contains('failed-precondition') || msg.contains('failed_precondition')) {
+      // Usually a missing Firestore index — in-memory sort should prevent this.
+      return 'Unable to load history. Please refresh.';
     }
     if (msg.contains('not-found') || msg.contains('no document')) {
       return 'SOS record not found. It may have already been deleted.';
     }
-    return 'Something went wrong. Please try again.';
+    if (msg.contains('unauthenticated') || msg.contains('not signed in')) {
+      return 'Session expired. Please sign in again.';
+    }
+    return 'Unable to load SOS history. Please tap Refresh.';
   }
 }

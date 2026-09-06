@@ -9,10 +9,12 @@ import 'package:nari_suraksha/core/theme/app_colors.dart';
 import 'package:nari_suraksha/core/theme/app_text_styles.dart';
 import 'package:nari_suraksha/core/widgets/widgets.dart';
 import 'package:nari_suraksha/models/activity_log_model.dart';
+import 'package:nari_suraksha/models/sos_record_model.dart';
 import 'package:nari_suraksha/providers/contact_provider.dart';
 import 'package:nari_suraksha/providers/dashboard_provider.dart';
 import 'package:nari_suraksha/providers/sos_provider.dart';
 import 'package:nari_suraksha/providers/user_provider.dart';
+import 'package:nari_suraksha/features/sos/screens/sos_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DashboardScreen
@@ -58,8 +60,8 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   // ── Quick action definitions ────────────────────────────────────────────────
 
-  static const List<_QuickAction> _quickActions = [
-    _QuickAction(
+  static List<_QuickAction> get _quickActions => [
+    const _QuickAction(
       icon: Icons.contacts_rounded,
       label: 'Emergency\nContacts',
       color: AppColors.pastYellowIcon,
@@ -71,23 +73,16 @@ class _DashboardScreenState extends State<DashboardScreen>
       label: 'Live\nTracking',
       color: AppColors.pastBlueIcon,
       bgColor: AppColors.pastBlue,
-      route: AppRoutes.liveTracking,
+      onTap: (context) {
+        showModalBottomSheet<void>(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (_) => const LocationBottomSheet(),
+        );
+      },
     ),
-    _QuickAction(
-      icon: Icons.route_rounded,
-      label: 'Safe\nRoute',
-      color: AppColors.pastPurpleIcon,
-      bgColor: AppColors.pastPurple,
-      route: AppRoutes.safeRoute,
-    ),
-    _QuickAction(
-      icon: Icons.phone_callback_rounded,
-      label: 'Fake\nCall',
-      color: AppColors.pastPeachIcon,
-      bgColor: AppColors.pastPeach,
-      route: null, // Coming soon
-    ),
-    _QuickAction(
+    const _QuickAction(
       icon: Icons.mic_rounded,
       label: 'Voice\nSOS',
       color: AppColors.pastGreenIcon,
@@ -95,25 +90,17 @@ class _DashboardScreenState extends State<DashboardScreen>
       route: AppRoutes.voiceSos,
     ),
     _QuickAction(
-      icon: Icons.videocam_rounded,
-      label: 'Hidden\nCamera',
-      color: AppColors.pastMintIcon,
-      bgColor: AppColors.pastMint,
-      route: null, // Coming soon
-    ),
-    _QuickAction(
-      icon: Icons.timer_rounded,
-      label: 'Safety\nTimer',
-      color: AppColors.pastLavenderIcon,
-      bgColor: AppColors.pastLavender,
-      route: AppRoutes.safetyTimer,
-    ),
-    _QuickAction(
-      icon: Icons.smart_toy_rounded,
-      label: 'AI\nAssistant',
-      color: AppColors.pastCyanIcon,
-      bgColor: AppColors.pastCyan,
-      route: null, // Coming soon
+      icon: Icons.sos_rounded,
+      label: 'Emergency\nSOS',
+      color: const Color(0xFFEF4444),
+      bgColor: const Color(0xFFFEE2E2),
+      onTap: (context) {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => const SosScreen(),
+          ),
+        );
+      },
     ),
   ];
 
@@ -312,22 +299,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                   child: SectionHeader(
                     title: 'Recent Alerts',
                     actionLabel: 'See all',
-                    onAction: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: const Text(
-                            'Full activity history coming soon.',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          behavior: SnackBarBehavior.floating,
-                          shape: RoundedRectangleBorder(
-                            borderRadius:
-                                BorderRadius.circular(AppRadius.md),
-                          ),
-                          duration: const Duration(seconds: 2),
-                        ),
-                      );
-                    },
+                    onAction: () => _showNotificationsSheet(context),
                     padding: EdgeInsets.zero,
                   ),
                 ),
@@ -434,7 +406,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     clipBehavior: Clip.none,
                     children: [
                       IconButton(
-                        onPressed: () {},
+                        onPressed: () => _showNotificationsSheet(context),
                         icon: const Icon(Icons.notifications_outlined),
                         color: AppColors.onPrimary,
                         tooltip: 'Notifications',
@@ -456,31 +428,35 @@ class _DashboardScreenState extends State<DashboardScreen>
 
                   const SizedBox(width: AppSpacing.xs),
 
-                  // Avatar — photo URL → network image → initials
-                  Consumer<UserProvider>(
-                    builder: (_, userProv, __) {
-                      final user = userProv.user;
-                      return CircularAvatarWidget(
-                        name: user?.firstName ?? 'U',
-                        imageUrl: user?.photoUrl,
-                        radius: 22,
-                        backgroundColor:
-                            AppColors.onPrimary.withValues(alpha: 0.2),
-                        foregroundColor: AppColors.onPrimary,
-                        badge: Container(
-                          width: 12,
-                          height: 12,
-                          decoration: BoxDecoration(
-                            color: AppColors.success,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: AppColors.primaryDark,
-                              width: 2,
+                  // Avatar — dynamic initials (taps navigate to Profile)
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.of(context).pushNamed(AppRoutes.profile);
+                    },
+                    child: Consumer<UserProvider>(
+                      builder: (_, userProv, __) {
+                        final user = userProv.user;
+                        return CircularAvatarWidget(
+                          name: user?.name ?? 'SB',
+                          radius: 22,
+                          backgroundColor:
+                              AppColors.onPrimary.withValues(alpha: 0.2),
+                          foregroundColor: AppColors.onPrimary,
+                          badge: Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: AppColors.success,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: AppColors.primaryDark,
+                                width: 2,
+                              ),
                             ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
                 ],
               ),
@@ -520,6 +496,15 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
         ),
       ),
+    );
+  }
+
+  void _showNotificationsSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const _NotificationsBottomSheet(),
     );
   }
 }
@@ -1031,6 +1016,7 @@ class _QuickAction {
     required this.color,
     required this.bgColor,
     this.route,
+    this.onTap,
   });
 
   final IconData icon;
@@ -1040,6 +1026,9 @@ class _QuickAction {
 
   /// Named route to push. `null` = "Coming Soon" sheet.
   final String? route;
+
+  /// Optional custom tap handler (e.g. open bottom sheet or custom screen).
+  final void Function(BuildContext context)? onTap;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1138,6 +1127,10 @@ class _QuickActionTileState extends State<_QuickActionTile>
   bool _hovered = false;
 
   void _handleTap(BuildContext context) {
+    if (widget.action.onTap != null) {
+      widget.action.onTap!(context);
+      return;
+    }
     final route = widget.action.route;
     if (route != null) {
       Navigator.of(context).pushNamed(route);
@@ -1730,3 +1723,419 @@ class _SafetyTipCard extends StatelessWidget {
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _NotificationsBottomSheet  —  Recent Alerts modal sheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _NotificationsBottomSheet extends StatelessWidget {
+  const _NotificationsBottomSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final maxSheetHeight = MediaQuery.of(context).size.height * 0.75;
+
+    return Container(
+      constraints: BoxConstraints(maxHeight: maxSheetHeight),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(AppRadius.xxl),
+        ),
+      ),
+      child: SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: AppSpacing.sm),
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: cs.outlineVariant,
+                  borderRadius: BorderRadius.circular(AppRadius.full),
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              child: Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryContainer,
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                    ),
+                    child: const Icon(
+                      Icons.notifications_active_rounded,
+                      color: AppColors.primary,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Recent Alerts',
+                          style: AppTextStyles.titleLarge.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: cs.onSurface,
+                          ),
+                        ),
+                        Text(
+                          'Safety and emergency notifications',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                    tooltip: 'Close',
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Divider(height: 1, color: cs.outlineVariant),
+            Flexible(
+              child: Consumer2<DashboardProvider, SosProvider>(
+                builder: (context, dash, sosProv, __) {
+                  final alerts = dash.recentAlerts;
+                  final sosRecords = sosProv.history;
+
+                  if (dash.isInitializing && alerts.isEmpty && sosRecords.isEmpty) {
+                    return const Padding(
+                      padding: EdgeInsets.all(AppSpacing.xxl),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+
+                  if (alerts.isEmpty && sosRecords.isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.all(AppSpacing.lg),
+                      child: _EmptyAlertsCard(cs: cs),
+                    );
+                  }
+
+                  // If we have activity logs, render them with status badges
+                  if (alerts.isNotEmpty) {
+                    return ListView.separated(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md,
+                        vertical: AppSpacing.md,
+                      ),
+                      shrinkWrap: true,
+                      itemCount: alerts.length,
+                      separatorBuilder: (_, __) => Divider(
+                        height: 1,
+                        color: cs.outlineVariant.withValues(alpha: 0.5),
+                        indent: AppSpacing.md,
+                        endIndent: AppSpacing.md,
+                      ),
+                      itemBuilder: (_, index) {
+                        return _NotificationAlertTile(
+                          log: alerts[index],
+                          cs: cs,
+                        );
+                      },
+                    );
+                  }
+
+                  // Fallback to SOS records from history if no activity logs
+                  return ListView.separated(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md,
+                      vertical: AppSpacing.md,
+                    ),
+                    shrinkWrap: true,
+                    itemCount: sosRecords.length,
+                    separatorBuilder: (_, __) => Divider(
+                      height: 1,
+                      color: cs.outlineVariant.withValues(alpha: 0.5),
+                      indent: AppSpacing.md,
+                      endIndent: AppSpacing.md,
+                    ),
+                    itemBuilder: (_, index) {
+                      return _SosRecordAlertTile(
+                        record: sosRecords[index],
+                        cs: cs,
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NotificationAlertTile extends StatelessWidget {
+  const _NotificationAlertTile({required this.log, required this.cs});
+  final ActivityLogModel log;
+  final ColorScheme cs;
+
+  IconData get _icon => switch (log.type) {
+        ActivityLogType.sosActivated => Icons.sos_rounded,
+        ActivityLogType.locationShared => Icons.location_on_rounded,
+        ActivityLogType.contactAdded => Icons.person_add_rounded,
+        ActivityLogType.contactDeleted => Icons.person_remove_rounded,
+        ActivityLogType.timerCompleted => Icons.timer_off_rounded,
+        ActivityLogType.timerStarted => Icons.timer_rounded,
+        ActivityLogType.profileUpdated => Icons.manage_accounts_rounded,
+        ActivityLogType.unknown => Icons.notifications_rounded,
+      };
+
+  Color get _iconColor => switch (log.type) {
+        ActivityLogType.sosActivated => AppColors.error,
+        ActivityLogType.locationShared => AppColors.pastBlueIcon,
+        ActivityLogType.contactAdded => AppColors.pastGreenIcon,
+        ActivityLogType.contactDeleted => AppColors.error,
+        ActivityLogType.timerCompleted => AppColors.pastLavenderIcon,
+        ActivityLogType.timerStarted => AppColors.pastYellowIcon,
+        ActivityLogType.profileUpdated => AppColors.pastPurpleIcon,
+        ActivityLogType.unknown => cs.onSurfaceVariant,
+      };
+
+  Color get _bgColor => switch (log.type) {
+        ActivityLogType.sosActivated => AppColors.errorContainer,
+        ActivityLogType.locationShared => AppColors.pastBlue,
+        ActivityLogType.contactAdded => AppColors.pastGreen,
+        ActivityLogType.contactDeleted => AppColors.errorContainer,
+        ActivityLogType.timerCompleted => AppColors.pastLavender,
+        ActivityLogType.timerStarted => AppColors.pastYellow,
+        ActivityLogType.profileUpdated => AppColors.pastPurple,
+        ActivityLogType.unknown => cs.surfaceContainerHighest,
+      };
+
+  String get _statusLabel => switch (log.type) {
+        ActivityLogType.sosActivated => 'Active',
+        ActivityLogType.locationShared => 'Shared',
+        ActivityLogType.contactAdded => 'Saved',
+        ActivityLogType.contactDeleted => 'Removed',
+        ActivityLogType.timerCompleted => 'Completed',
+        ActivityLogType.timerStarted => 'Started',
+        ActivityLogType.profileUpdated => 'Updated',
+        ActivityLogType.unknown => 'Alert',
+      };
+
+  Color get _statusColor => switch (log.type) {
+        ActivityLogType.sosActivated => AppColors.error,
+        ActivityLogType.locationShared => AppColors.pastBlueIcon,
+        ActivityLogType.contactAdded => AppColors.pastGreenIcon,
+        ActivityLogType.contactDeleted => AppColors.error,
+        _ => cs.onSurfaceVariant,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final timeStr = DateFormat('hh:mm a · dd MMM yyyy').format(log.timestamp);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.sm,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: _bgColor,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+            child: Icon(_icon, color: _iconColor, size: 22),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        log.type.displayLabel,
+                        style: AppTextStyles.titleSmall.copyWith(
+                          color: cs.onSurface,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _statusColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(AppRadius.full),
+                      ),
+                      child: Text(
+                        _statusLabel,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: _statusColor,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  log.description,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: cs.onSurfaceVariant,
+                    height: 1.3,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.access_time_rounded,
+                      size: 13,
+                      color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      timeStr,
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SosRecordAlertTile extends StatelessWidget {
+  const _SosRecordAlertTile({required this.record, required this.cs});
+  final SosRecordModel record;
+  final ColorScheme cs;
+
+  bool get _isResolved => record.status == SosStatus.resolved;
+
+  @override
+  Widget build(BuildContext context) {
+    final timeStr = DateFormat('hh:mm a · dd MMM yyyy').format(record.timestamp);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.sm,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: _isResolved
+                  ? AppColors.pastGreen
+                  : AppColors.errorContainer,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+            child: Icon(
+              Icons.sos_rounded,
+              color: _isResolved ? AppColors.pastGreenIcon : AppColors.error,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Emergency SOS Alert',
+                        style: AppTextStyles.titleSmall.copyWith(
+                          color: cs.onSurface,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: (_isResolved ? AppColors.success : AppColors.error)
+                            .withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(AppRadius.full),
+                      ),
+                      child: Text(
+                        _isResolved ? 'Resolved' : 'Active',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: _isResolved ? AppColors.success : AppColors.error,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  'GPS: ${record.latitude.toStringAsFixed(5)}, ${record.longitude.toStringAsFixed(5)}',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: cs.onSurfaceVariant,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.access_time_rounded,
+                      size: 13,
+                      color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      timeStr,
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+

@@ -45,12 +45,9 @@ class _ProfilePageState extends State<ProfilePage>
   late final Animation<double> _entryFade;
   late final Animation<Offset> _entrySlide;
 
-  // Safety score gauge animation
-  late final AnimationController _scoreCtrl;
-  late Animation<double> _scoreAnim;
-
   final LocationService _locationService = LocationService();
   bool _isLocationReady = false;
+  bool _settingsInitialized = false;
 
   @override
   void initState() {
@@ -65,14 +62,6 @@ class _ProfilePageState extends State<ProfilePage>
       begin: const Offset(0, 0.04),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut));
-
-    _scoreCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    );
-    _scoreAnim = Tween<double>(begin: 0, end: 0.5).animate(
-      CurvedAnimation(parent: _scoreCtrl, curve: Curves.easeOutCubic),
-    );
 
     Future.delayed(const Duration(milliseconds: 80), () {
       if (mounted) {
@@ -97,47 +86,7 @@ class _ProfilePageState extends State<ProfilePage>
   @override
   void dispose() {
     _entryCtrl.dispose();
-    _scoreCtrl.dispose();
     super.dispose();
-  }
-
-  // ── Dynamic Safety Score Calculator ────────────────────────────────────────
-
-  double _calculateSafetyScore({
-    required UserModel? user,
-    required int contactsCount,
-    required bool isLocationReady,
-  }) {
-    double score = 20.0; // Base registered score
-
-    if (user != null) {
-      if (user.name.isNotEmpty && user.name != 'User') score += 10.0;
-      if (user.phone != null && user.phone!.isNotEmpty) score += 10.0;
-
-      // Medical info completeness
-      if (user.bloodGroup.isNotEmpty) score += 10.0;
-      if (user.allergies.isNotEmpty ||
-          user.conditions.isNotEmpty ||
-          user.medications.isNotEmpty) {
-        score += 10.0;
-      }
-    }
-
-    // Contacts score (up to 30)
-    if (contactsCount >= 3) {
-      score += 30.0;
-    } else if (contactsCount == 2) {
-      score += 20.0;
-    } else if (contactsCount == 1) {
-      score += 10.0;
-    }
-
-    // Location readiness (10)
-    if (isLocationReady) {
-      score += 10.0;
-    }
-
-    return score.clamp(0.0, 100.0);
   }
 
   // ── Logout confirmation ────────────────────────────────────────────────────
@@ -308,45 +257,7 @@ class _ProfilePageState extends State<ProfilePage>
     );
   }
 
-  // ── Profile Photo Picker & Upload ──────────────────────────────────────────
 
-  Future<void> _onTapProfilePhoto(UserModel user) async {
-    final profileProv = context.read<ProfileProvider>();
-    final userProv = context.read<UserProvider>();
-
-    final err = await profileProv.pickAndUploadProfilePhoto(uid: user.uid);
-    if (!mounted) return;
-
-    if (err != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(err),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.md),
-          ),
-        ),
-      );
-    } else if (profileProv.successMessage != null) {
-      await userProv.refresh();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text(
-            'Profile photo updated successfully! 📸',
-            style: TextStyle(fontWeight: FontWeight.w600),
-          ),
-          backgroundColor: AppColors.success,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.md),
-          ),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    }
-  }
 
   // ── Edit Medical Info sheet ─────────────────────────────────────────────────
 
@@ -529,92 +440,6 @@ class _ProfilePageState extends State<ProfilePage>
                 ),
               ),
             ),
-          ),
-        );
-      },
-    );
-  }
-
-  // ── Language Selection Sheet ───────────────────────────────────────────────
-
-  void _showLanguageSelectionSheet(SettingsProvider settings, String? uid) {
-    final languages = [
-      'English (India)',
-      'Hindi (हिंदी)',
-      'Marathi (मराठी)',
-      'Bengali (বাংলা)',
-      'Tamil (தமிழ்)',
-      'Telugu (తెలుగు)',
-    ];
-
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        final cs = Theme.of(ctx).colorScheme;
-        return Container(
-          margin: const EdgeInsets.all(AppSpacing.sm),
-          decoration: BoxDecoration(
-            color: cs.surface,
-            borderRadius: BorderRadius.circular(AppRadius.xxl),
-          ),
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: cs.outlineVariant,
-                    borderRadius: BorderRadius.circular(AppRadius.full),
-                  ),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Text(
-                'Select App Language',
-                style: AppTextStyles.titleMedium
-                    .copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              ...languages.map((lang) {
-                final isSelected = settings.language == lang;
-                return ListTile(
-                  title: Text(
-                    lang,
-                    style: TextStyle(
-                      fontWeight:
-                          isSelected ? FontWeight.w700 : FontWeight.normal,
-                      color: isSelected ? cs.primary : cs.onSurface,
-                    ),
-                  ),
-                  trailing: isSelected
-                      ? Icon(Icons.check_circle_rounded, color: cs.primary)
-                      : null,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                  ),
-                  onTap: () {
-                    settings.setLanguage(lang, uid: uid);
-                    Navigator.pop(ctx);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Language set to $lang'),
-                        backgroundColor: AppColors.success,
-                        behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(AppRadius.md),
-                        ),
-                        duration: const Duration(seconds: 2),
-                      ),
-                    );
-                  },
-                );
-              }),
-            ],
           ),
         );
       },
@@ -1386,24 +1211,10 @@ class _ProfilePageState extends State<ProfilePage>
         final uid = user?.uid ?? userProv.currentUid;
 
         // Initialize settings once user is loaded
-        if (user != null && settingsProv.language == 'English (India)') {
+        if (user != null && !_settingsInitialized) {
+          _settingsInitialized = true;
           settingsProv.initFromUser(user);
         }
-
-        // Calculate dynamic safety score
-        final calculatedScore = _calculateSafetyScore(
-          user: user,
-          contactsCount: contacts.length,
-          isLocationReady: _isLocationReady,
-        );
-
-        _scoreAnim = Tween<double>(
-          begin: 0,
-          end: calculatedScore / 100.0,
-        ).animate(
-          CurvedAnimation(parent: _scoreCtrl, curve: Curves.easeOutCubic),
-        );
-        _scoreCtrl.forward(from: 0);
 
         return Scaffold(
           backgroundColor: AppColors.background,
@@ -1417,19 +1228,6 @@ class _ProfilePageState extends State<ProfilePage>
                   // ── Hero header ───────────────────────────────────────────
                   SliverToBoxAdapter(
                     child: _buildHero(cs, user),
-                  ),
-
-                  // ── Dynamic Safety Score Card ─────────────────────────────
-                  _sectionLabel('Safety Score', cs),
-                  _section(
-                    child: _SafetyScoreCard(
-                      scoreAnim: _scoreAnim,
-                      score: calculatedScore,
-                      contactsCount: contacts.length,
-                      medicalSet: user != null && user.bloodGroup.isNotEmpty,
-                      locationReady: _isLocationReady,
-                      cs: cs,
-                    ),
                   ),
 
                   // ── Medical Information ───────────────────────────────────
@@ -1505,15 +1303,6 @@ class _ProfilePageState extends State<ProfilePage>
                           ),
                         ),
                         _SettingsTile(
-                          icon: Icons.language_rounded,
-                          iconColor: const Color(0xFF7C3AED),
-                          iconBg: const Color(0xFFEDE9FE),
-                          title: 'Language',
-                          subtitle: settingsProv.language,
-                          onTap: () =>
-                              _showLanguageSelectionSheet(settingsProv, uid),
-                        ),
-                        _SettingsTile(
                           icon: Icons.dark_mode_outlined,
                           iconColor: const Color(0xFF0E7490),
                           iconBg: const Color(0xFFCFFAFE),
@@ -1533,37 +1322,6 @@ class _ProfilePageState extends State<ProfilePage>
                     child: _SettingsGroup(
                       cs: cs,
                       items: [
-                        _SettingsTile(
-                          icon: Icons.fingerprint_rounded,
-                          iconColor: const Color(0xFF9D174D),
-                          iconBg: const Color(0xFFFCE7F3),
-                          title: 'Biometric Lock',
-                          subtitle: settingsProv.biometricEnabled
-                              ? 'Biometric app protection active'
-                              : 'Protect app with fingerprint / face',
-                          trailing: Switch(
-                            value: settingsProv.biometricEnabled,
-                            onChanged: (v) {
-                              settingsProv.setBiometricEnabled(v, uid: uid);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(v
-                                      ? 'Biometric lock enabled'
-                                      : 'Biometric lock disabled'),
-                                  backgroundColor: AppColors.success,
-                                  behavior: SnackBarBehavior.floating,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(AppRadius.md),
-                                  ),
-                                  duration: const Duration(seconds: 2),
-                                ),
-                              );
-                            },
-                            activeThumbColor: cs.onPrimary,
-                            activeTrackColor: cs.primary,
-                          ),
-                        ),
                         _SettingsTile(
                           icon: Icons.lock_outline_rounded,
                           iconColor: AppColors.primary,
@@ -1700,9 +1458,6 @@ class _ProfilePageState extends State<ProfilePage>
     final name = user?.name ?? 'User';
     final email = user?.email ?? '';
     final phone = user?.phone ?? '';
-    final initials = user?.initials ?? 'U';
-    final hasPhoto = user?.photoUrl != null && user!.photoUrl!.isNotEmpty;
-
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -1718,85 +1473,31 @@ class _ProfilePageState extends State<ProfilePage>
               AppSpacing.md, AppSpacing.lg, AppSpacing.md, AppSpacing.xl),
           child: Column(
             children: [
-              // Avatar + edit badge
-              Consumer<ProfileProvider>(
-                builder: (context, profileProv, _) {
-                  final isUploading = profileProv.isUploadingPhoto;
-                  return Stack(
-                    alignment: Alignment.bottomRight,
-                    children: [
-                      GestureDetector(
-                        onTap: user != null && !isUploading
-                            ? () => _onTapProfilePhoto(user)
-                            : null,
-                        child: Container(
-                          width: 108,
-                          height: 108,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: AppColors.onPrimary.withValues(alpha: 0.30),
-                              width: 3,
-                            ),
-                          ),
-                          child: CircleAvatar(
-                            radius: 50,
-                            backgroundColor:
-                                AppColors.onPrimary.withValues(alpha: 0.18),
-                            backgroundImage:
-                                hasPhoto ? NetworkImage(user.photoUrl!) : null,
-                            child: isUploading
-                                ? const SizedBox(
-                                    width: 32,
-                                    height: 32,
-                                    child: CircularProgressIndicator(
-                                      color: Colors.white,
-                                      strokeWidth: 3,
-                                    ),
-                                  )
-                                : (!hasPhoto
-                                    ? Text(
-                                        initials,
-                                        style: AppTextStyles.headlineMedium
-                                            .copyWith(
-                                          color: AppColors.onPrimary,
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 34,
-                                        ),
-                                      )
-                                    : null),
-                          ),
-                        ),
-                      ),
-                      // Camera / Gallery picker icon
-                      GestureDetector(
-                        onTap: user != null && !isUploading
-                            ? () => _onTapProfilePhoto(user)
-                            : null,
-                        child: Container(
-                          width: 34,
-                          height: 34,
-                          decoration: BoxDecoration(
-                            color: cs.surface,
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.18),
-                                blurRadius: 6,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Icon(
-                            Icons.camera_alt_rounded,
-                            size: 18,
-                            color: cs.primary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                },
+              // Initials avatar
+              Container(
+                width: 108,
+                height: 108,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.onPrimary.withValues(alpha: 0.30),
+                    width: 3,
+                  ),
+                ),
+                child: Center(
+                  child: CircularAvatarWidget(
+                    name: user?.name,
+                    radius: 50,
+                    backgroundColor:
+                        AppColors.onPrimary.withValues(alpha: 0.18),
+                    foregroundColor: AppColors.onPrimary,
+                    textStyle: AppTextStyles.headlineMedium.copyWith(
+                      color: AppColors.onPrimary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 34,
+                    ),
+                  ),
+                ),
               ),
 
               const SizedBox(height: AppSpacing.md),
@@ -1887,192 +1588,6 @@ class _ProfilePageState extends State<ProfilePage>
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// _SafetyScoreCard
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _SafetyScoreCard extends StatelessWidget {
-  const _SafetyScoreCard({
-    required this.scoreAnim,
-    required this.score,
-    required this.contactsCount,
-    required this.medicalSet,
-    required this.locationReady,
-    required this.cs,
-  });
-
-  final Animation<double> scoreAnim;
-  final double score;
-  final int contactsCount;
-  final bool medicalSet;
-  final bool locationReady;
-  final ColorScheme cs;
-
-  static const _green = Color(0xFF16A34A);
-  static const _greenBg = Color(0xFFDCFCE7);
-
-  @override
-  Widget build(BuildContext context) {
-    String description;
-    if (score >= 80) {
-      description =
-          'Your safety profile is well configured. Emergency alerts are primed and ready.';
-    } else if (score >= 50) {
-      description =
-          'Your safety profile is partially ready. Add emergency contacts and medical details for maximum protection.';
-    } else {
-      description =
-          'Please complete your safety setup by adding emergency contacts and medical information.';
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            _greenBg,
-            _greenBg.withValues(alpha: 0.4),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(AppRadius.card),
-        border: Border.all(color: _green.withValues(alpha: 0.25)),
-      ),
-      child: Row(
-        children: [
-          // Circular gauge
-          SizedBox(
-            width: 90,
-            height: 90,
-            child: AnimatedBuilder(
-              animation: scoreAnim,
-              builder: (_, __) => Stack(
-                alignment: Alignment.center,
-                children: [
-                  CircularProgressIndicator(
-                    value: scoreAnim.value,
-                    strokeWidth: 8,
-                    backgroundColor: _green.withValues(alpha: 0.15),
-                    valueColor: const AlwaysStoppedAnimation<Color>(_green),
-                    strokeCap: StrokeCap.round,
-                  ),
-                  Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        '${score.round()}',
-                        style: AppTextStyles.headlineMedium.copyWith(
-                          color: _green,
-                          fontWeight: FontWeight.w800,
-                          height: 1,
-                        ),
-                      ),
-                      Text(
-                        '/100',
-                        style: AppTextStyles.labelSmall.copyWith(
-                          color: _green.withValues(alpha: 0.7),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(width: AppSpacing.md),
-
-          // Description
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.verified_rounded,
-                        color: _green, size: 18),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Safety Score',
-                      style: AppTextStyles.titleMedium.copyWith(
-                        color: _green,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  description,
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: const Color(0xFF166534),
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                // Dynamic Stat chips
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  children: [
-                    _ScoreChip(
-                      label: '$contactsCount Contact${contactsCount == 1 ? '' : 's'}',
-                      icon: Icons.people_rounded,
-                    ),
-                    _ScoreChip(
-                      label: medicalSet ? 'Medical Set' : 'Medical Pending',
-                      icon: Icons.medical_information_rounded,
-                    ),
-                    _ScoreChip(
-                      label: locationReady ? 'GPS Ready' : 'GPS Off',
-                      icon: Icons.location_on_rounded,
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ScoreChip extends StatelessWidget {
-  const _ScoreChip({required this.label, required this.icon});
-
-  final String label;
-  final IconData icon;
-
-  static const _green = Color(0xFF16A34A);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: _green.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(AppRadius.full),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 11, color: _green),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: AppTextStyles.labelSmall.copyWith(
-              color: _green,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
       ),
     );
   }

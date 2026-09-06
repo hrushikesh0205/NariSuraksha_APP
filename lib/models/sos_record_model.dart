@@ -67,6 +67,17 @@ class SosRecordModel {
   /// Timestamp when Low Priority contacts were alerted (T = 5 min).
   final DateTime? lowAlertedAt;
 
+  /// How the SOS was triggered ('button' | 'voice' | 'shake').
+  final String triggerSource;
+
+  /// Whether the user authorized calling police/112 at worst-case stage.
+  /// `null` = not yet prompted, `true` = authorized, `false` = declined.
+  final bool? policeCallAuthorized;
+
+  /// Per-contact SMS result map: normalised phone → result string.
+  /// Possible values: 'sent', 'failed', 'pending', 'skipped'.
+  final Map<String, String>? smsResults;
+
   const SosRecordModel({
     this.id,
     required this.userId,
@@ -79,6 +90,9 @@ class SosRecordModel {
     this.highAlertedAt,
     this.mediumAlertedAt,
     this.lowAlertedAt,
+    this.triggerSource = 'button',
+    this.policeCallAuthorized,
+    this.smsResults,
   });
 
   // ── Factories ───────────────────────────────────────────────────────────────
@@ -101,6 +115,11 @@ class SosRecordModel {
       highAlertedAt: (data['highAlertedAt'] as Timestamp?)?.toDate(),
       mediumAlertedAt: (data['mediumAlertedAt'] as Timestamp?)?.toDate(),
       lowAlertedAt: (data['lowAlertedAt'] as Timestamp?)?.toDate(),
+      triggerSource: (data['triggerSource'] as String?) ?? 'button',
+      policeCallAuthorized: data['policeCallAuthorized'] as bool?,
+      smsResults: (data['smsResults'] as Map<String, dynamic>?)?.map(
+        (k, v) => MapEntry(k, v.toString()),
+      ),
     );
   }
 
@@ -115,12 +134,16 @@ class SosRecordModel {
       'startedAt': FieldValue.serverTimestamp(),
       'status': status.value,
       'escalationLevel': escalationLevel,
+      'triggerSource': triggerSource,
       if (resolvedAt != null) 'resolvedAt': Timestamp.fromDate(resolvedAt!),
       if (highAlertedAt != null)
         'highAlertedAt': Timestamp.fromDate(highAlertedAt!),
       if (mediumAlertedAt != null)
         'mediumAlertedAt': Timestamp.fromDate(mediumAlertedAt!),
       if (lowAlertedAt != null) 'lowAlertedAt': Timestamp.fromDate(lowAlertedAt!),
+      if (policeCallAuthorized != null)
+        'policeCallAuthorized': policeCallAuthorized,
+      if (smsResults != null) 'smsResults': smsResults,
     };
   }
 
@@ -136,6 +159,9 @@ class SosRecordModel {
     DateTime? highAlertedAt,
     DateTime? mediumAlertedAt,
     DateTime? lowAlertedAt,
+    String? triggerSource,
+    bool? policeCallAuthorized,
+    Map<String, String>? smsResults,
   }) {
     return SosRecordModel(
       id: id ?? this.id,
@@ -149,6 +175,9 @@ class SosRecordModel {
       highAlertedAt: highAlertedAt ?? this.highAlertedAt,
       mediumAlertedAt: mediumAlertedAt ?? this.mediumAlertedAt,
       lowAlertedAt: lowAlertedAt ?? this.lowAlertedAt,
+      triggerSource: triggerSource ?? this.triggerSource,
+      policeCallAuthorized: policeCallAuthorized ?? this.policeCallAuthorized,
+      smsResults: smsResults ?? this.smsResults,
     );
   }
 

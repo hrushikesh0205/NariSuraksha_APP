@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:nari_suraksha/core/routes/app_routes.dart';
 import 'package:nari_suraksha/core/services/auth_service.dart';
 import 'package:nari_suraksha/core/theme/app_colors.dart';
 import 'package:nari_suraksha/core/theme/app_text_styles.dart';
@@ -10,7 +11,9 @@ import 'package:provider/provider.dart';
 ///
 /// Navigation logic: pushes `/home` on success, `/register` for new users.
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  const LoginPage({super.key, this.authService});
+
+  final AuthService? authService;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -19,10 +22,16 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
-  final _authService = AuthService();
+  late final AuthService _authService;
 
   bool _isLoading = false;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _authService = widget.authService ?? AuthService();
+  }
 
   @override
   void dispose() {
@@ -59,7 +68,7 @@ class _LoginPageState extends State<LoginPage> {
       // Subscribe ContactProvider to this user's contacts
       context.read<ContactProvider>().subscribe(user.uid);
 
-      Navigator.pushReplacementNamed(context, '/home');
+      Navigator.pushReplacementNamed(context, AppRoutes.home);
     } catch (e, st) {
       debugPrint('🔥 LoginPage._handleSignIn error: $e\n$st');
       if (!mounted) return;
@@ -293,7 +302,7 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                     GestureDetector(
                       onTap: () =>
-                          Navigator.pushNamed(context, '/register'),
+                          Navigator.pushNamed(context, AppRoutes.register),
                       child: Text(
                         'Register',
                         style: AppTextStyles.labelLarge.copyWith(
