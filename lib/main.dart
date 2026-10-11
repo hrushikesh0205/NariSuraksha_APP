@@ -1,8 +1,10 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:nari_suraksha/app.dart';
+import 'package:nari_suraksha/providers/connectivity_provider.dart';
 import 'package:nari_suraksha/providers/user_provider.dart';
 import 'package:nari_suraksha/providers/dashboard_provider.dart';
 import 'package:nari_suraksha/providers/contact_provider.dart';
@@ -30,6 +32,11 @@ void main() async {
   runApp(
     MultiProvider(
       providers: [
+        // ── Connectivity — first so all other providers can read it ──────────
+        ChangeNotifierProvider<ConnectivityProvider>(
+          create: (_) => ConnectivityProvider(),
+        ),
+
         // App preferences & settings (theme, notifications, location, voice SOS)
         ChangeNotifierProvider<SettingsProvider>(
           create: (_) => SettingsProvider(),
@@ -119,7 +126,15 @@ Future<void> _initFirebase() async {
       // TODO: After running `flutterfire configure`, replace the line above with:
       // await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
     );
-    debugPrint('✅ Firebase initialised successfully.');
+
+    // Enable Firestore offline persistence so reads work from cache when offline.
+    // This is additive to the SQLite local DB — Firestore handles its own caching.
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: true,
+      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+    );
+
+    debugPrint('✅ Firebase initialised successfully (offline persistence enabled).');
   } on Exception catch (e) {
     debugPrint(
       '⚠️  Firebase initialisation failed — running in degraded mode.\n'

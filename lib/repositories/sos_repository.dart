@@ -17,9 +17,17 @@ class SosRepository {
 
   // ── Write ──────────────────────────────────────────────────────────────────
 
-  /// Writes a new SOS record to Firestore and returns the generated document ID.
-  Future<String> createSosRecord(SosRecordModel record) async {
+  /// Writes a new SOS record to Firestore and returns the document ID.
+  ///
+  /// If [docId] is provided, uses `.doc(docId).set()` (idempotent — safe to
+  /// call twice with the same ID during sync retry). Otherwise, generates a
+  /// new Firestore document ID via `.add()`.
+  Future<String> createSosRecord(SosRecordModel record, {String? docId}) async {
     try {
+      if (docId != null && docId.isNotEmpty) {
+        await _collection.doc(docId).set(record.toMap());
+        return docId;
+      }
       final ref = await _collection.add(record.toMap());
       return ref.id;
     } on FirebaseException catch (e) {

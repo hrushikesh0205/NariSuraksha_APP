@@ -51,9 +51,9 @@ class FakeSosRepository implements SosRepository {
   bool? updatedPoliceCallAuthorized;
 
   @override
-  Future<String> createSosRecord(SosRecordModel record) async {
+  Future<String> createSosRecord(SosRecordModel record, {String? docId}) async {
     records.add(record);
-    return 'fake_sos_id_${records.length}';
+    return docId ?? 'fake_sos_id_${records.length}';
   }
 
   @override
@@ -485,7 +485,7 @@ void main() {
       await provider.authorizePoliceCall();
       expect(provider.activeSession?.policeCallAuthorized, isTrue);
       expect(fakeSosRepo.updatedPoliceCallAuthorized, isTrue);
-      expect(fakeActivityRepo.logs, contains('User authorized calling emergency police/112.'));
+      expect(fakeActivityRepo.logs, contains('User authorized calling emergency police/100.'));
 
       await provider.declinePoliceCall();
       expect(provider.activeSession?.policeCallAuthorized, isFalse);

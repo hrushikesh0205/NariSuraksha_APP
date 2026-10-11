@@ -70,7 +70,7 @@ class SosRecordModel {
   /// How the SOS was triggered ('button' | 'voice' | 'shake').
   final String triggerSource;
 
-  /// Whether the user authorized calling police/112 at worst-case stage.
+  /// Whether the user authorized calling police/100 at worst-case stage.
   /// `null` = not yet prompted, `true` = authorized, `false` = declined.
   final bool? policeCallAuthorized;
 

@@ -1427,9 +1427,9 @@ class _EscalationStatusPanel extends StatelessWidget {
           ),
           const SizedBox(height: 6),
 
-          // Police Tier (112)
+          // Police Tier (100)
           _buildTierRow(
-            title: 'Police / Emergency (112)',
+            title: 'Police / Emergency (100)',
             timing: session.policeCallAuthorized == true
                 ? 'Authorized'
                 : 'Confirmation Required',
@@ -1531,7 +1531,7 @@ class _EscalationStatusPanel extends StatelessWidget {
                     );
                   },
                   icon: const Icon(Icons.local_police, size: 18, color: _sosRed),
-                  label: const Text('Call 112', style: TextStyle(color: _sosRed)),
+                  label: const Text('Call 100', style: TextStyle(color: _sosRed)),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: _sosRed),
                     padding: const EdgeInsets.symmetric(vertical: 10),

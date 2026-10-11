@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:nari_suraksha/core/theme/app_colors.dart';
+import 'package:nari_suraksha/core/widgets/offline_banner.dart';
 import 'package:nari_suraksha/features/home/screens/dashboard_screen.dart';
 import 'package:nari_suraksha/features/sos/screens/sos_screen.dart';
 import 'package:nari_suraksha/features/emergency_contacts/screens/contacts_screen.dart';
@@ -69,17 +70,26 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: _selectedIndex,
+      body: Column(
         children: [
-          // Tab 0 — Dashboard
-          const DashboardScreen(),
-          // Tab 1 — SOS screen (passes onSosSuccess to return to Dashboard)
-          SosScreen(onSosSuccess: () => switchToTab(0)),
-          // Tab 2 — Emergency contacts
-          const ContactsScreen(),
-          // Tab 3 — Profile
-          const ProfilePage(),
+          // ── Offline mode indicator (slides in/out when connectivity changes) ──
+          const OfflineBanner(),
+          // ── Tab content ─────────────────────────────────────────────────────
+          Expanded(
+            child: IndexedStack(
+              index: _selectedIndex,
+              children: [
+                // Tab 0 — Dashboard
+                const DashboardScreen(),
+                // Tab 1 — SOS screen (passes onSosSuccess to return to Dashboard)
+                SosScreen(onSosSuccess: () => switchToTab(0)),
+                // Tab 2 — Emergency contacts
+                const ContactsScreen(),
+                // Tab 3 — Profile
+                const ProfilePage(),
+              ],
+            ),
+          ),
         ],
       ),
       bottomNavigationBar: NavigationBar(

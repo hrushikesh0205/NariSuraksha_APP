@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:nari_suraksha/core/services/sms_service.dart';
 import 'package:nari_suraksha/models/activity_log_model.dart';
@@ -6,11 +6,12 @@ import 'package:nari_suraksha/models/contact_model.dart';
 import 'package:nari_suraksha/models/sos_record_model.dart';
 import 'package:nari_suraksha/repositories/activity_repository.dart';
 import 'package:nari_suraksha/repositories/contact_repository.dart';
+import 'package:nari_suraksha/repositories/local_sos_repository.dart';
 import 'package:nari_suraksha/repositories/sos_repository.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // ActiveSosSession
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /// Represents an ongoing Emergency SOS escalation session.
 class ActiveSosSession {
@@ -50,7 +51,7 @@ class ActiveSosSession {
   /// Tracks normalized phone numbers that have already received/opened an alert.
   final Set<String> alertedContactPhones;
 
-  /// Per-contact SMS result tracking: normalised phone → result.
+  /// Per-contact SMS result tracking: normalised phone â†’ result.
   final Map<String, SmsResult> smsResultsMap;
 
   Duration get elapsed => DateTime.now().difference(startedAt);
@@ -60,16 +61,16 @@ class ActiveSosSession {
       alertedPriorities.contains(ContactPriority.medium);
   bool get isLowAlerted => alertedPriorities.contains(ContactPriority.low);
 
-  /// Whether police/112 confirmation is pending.
+  /// Whether police/100 confirmation is pending.
   bool policeConfirmationPending = false;
 
   /// Whether the user already responded to the police prompt.
   bool? policeCallAuthorized;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // SosEscalationProvider
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /// Single source of truth for active SOS escalation sessions.
 ///
@@ -87,23 +88,26 @@ class SosEscalationProvider extends ChangeNotifier {
     ActivityRepository? activityRepository,
     ContactRepository? contactRepository,
     SmsService? smsService,
+    LocalSosRepository? localSosRepository,
   })  : _sosRepo = sosRepository ?? SosRepository(),
         _activityRepo = activityRepository ?? ActivityRepository(),
         _contactRepo = contactRepository,
-        _smsService = smsService ?? const SmsService();
+        _smsService = smsService ?? const SmsService(),
+        _localSosRepo = localSosRepository ?? LocalSosRepository();
 
   final SosRepository _sosRepo;
   final ActivityRepository _activityRepo;
   final ContactRepository? _contactRepo;
   final SmsService _smsService;
+  final LocalSosRepository _localSosRepo;
 
-  // ── Timeline constants (in seconds from startedAt) ──────────────────────────
+  // â”€â”€ Timeline constants (in seconds from startedAt) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   static const int mediumThresholdSeconds = 240; // T = 4 minutes
   static const int lowThresholdSeconds = 480;    // T = 8 minutes
   static const int policeThresholdSeconds = 720; // T = 12 minutes
   static const int safetyCheckTimeoutSeconds = 30; // Auto-danger after 30s timeout
 
-  // ── External Dependencies (set via ProxyProvider) ────────────────────────
+  // â”€â”€ External Dependencies (set via ProxyProvider) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /// Contacts list, set externally by the widget tree or ProxyProvider.
   List<EmergencyContact> _contacts = [];
@@ -119,7 +123,7 @@ class SosEscalationProvider extends ChangeNotifier {
     _userName = name;
   }
 
-  // ── State ───────────────────────────────────────────────────────────────────
+  // â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   ActiveSosSession? _activeSession;
   Timer? _ticker;
@@ -135,7 +139,7 @@ class SosEscalationProvider extends ChangeNotifier {
   /// Last batch SMS results (for UI display).
   List<SmsSendResult> _lastSmsResults = [];
 
-  // ── Getters ─────────────────────────────────────────────────────────────────
+  // â”€â”€ Getters â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   ActiveSosSession? get activeSession => _activeSession;
   bool get hasActiveSession =>
@@ -149,7 +153,7 @@ class SosEscalationProvider extends ChangeNotifier {
   bool get isPoliceConfirmationPending =>
       _activeSession?.policeConfirmationPending ?? false;
 
-  // ── Session Lifecycle ───────────────────────────────────────────────────────
+  // â”€â”€ Session Lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /// Starts a new SOS escalation session or safely joins an existing active session.
   ///
@@ -166,7 +170,7 @@ class SosEscalationProvider extends ChangeNotifier {
     // If a session is already active and unresolved, do NOT create a conflicting timer.
     if (_activeSession != null && !_activeSession!.isResolved) {
       debugPrint(
-        'ℹ️ SosEscalationProvider: Joining existing active SOS session (${_activeSession!.sosDocId})',
+        'â„¹ï¸ SosEscalationProvider: Joining existing active SOS session (${_activeSession!.sosDocId})',
       );
       return _activeSession!;
     }
@@ -259,7 +263,7 @@ class SosEscalationProvider extends ChangeNotifier {
     _pendingEscalationPriority = null;
 
     debugPrint(
-      'ℹ️ SosEscalationProvider: Resumed active session (${record.id}) started at ${record.timestamp}, elapsed: ${_elapsed.inMinutes}m',
+      'â„¹ï¸ SosEscalationProvider: Resumed active session (${record.id}) started at ${record.timestamp}, elapsed: ${_elapsed.inMinutes}m',
     );
 
     _startTicker();
@@ -267,25 +271,69 @@ class SosEscalationProvider extends ChangeNotifier {
     return _activeSession;
   }
 
-  /// Checks Firestore for any active, unresolved SOS session for [uid] and resumes it.
+  /// Checks local DB and Firestore for any active, unresolved SOS session for [uid] and resumes it.
+  ///
+  /// Priority: Local DB (works offline) â†’ Firestore (fallback when online).
   Future<ActiveSosSession?> checkAndResumeActiveSession(String uid) async {
     if (_activeSession != null && !_activeSession!.isResolved) {
       return _activeSession;
     }
     if (uid.isEmpty) return null;
+
+    // 1. Try local DB first â€” works offline
+    try {
+      final localSession = await _localSosRepo.getActiveSession(uid);
+      if (localSession != null) {
+        debugPrint(
+          'â„¹ï¸ SosEscalationProvider: Found active SOS session in local DB (${localSession.sosDocId}). Resuming...',
+        );
+        // Convert local session row to a SosRecordModel for resumeActiveSession
+        final alertedPhones = localSession.alertedPhones.isNotEmpty
+            ? localSession.alertedPhones.split(',')
+                .where((p) => p.isNotEmpty)
+                .toSet()
+            : <String>{};
+        final smsResults = <String, String>{};
+        for (final phone in alertedPhones) {
+          smsResults[phone] = 'sent';
+        }
+        final record = SosRecordModel(
+          id: localSession.sosDocId,
+          userId: localSession.userId,
+          latitude: localSession.latitude,
+          longitude: localSession.longitude,
+          timestamp: DateTime.tryParse(localSession.startedAt) ?? DateTime.now(),
+          status: SosStatus.active,
+          escalationLevel: localSession.currentLevel,
+          highAlertedAt: DateTime.tryParse(localSession.startedAt),
+          mediumAlertedAt: localSession.alertedPriorities.contains('medium')
+              ? DateTime.tryParse(localSession.updatedAt)
+              : null,
+          lowAlertedAt: localSession.alertedPriorities.contains('low')
+              ? DateTime.tryParse(localSession.updatedAt)
+              : null,
+          smsResults: smsResults.isNotEmpty ? smsResults : null,
+        );
+        return resumeActiveSession(record);
+      }
+    } catch (e) {
+      debugPrint('âš ï¸ SosEscalationProvider: local DB resume failed: $e');
+    }
+
+    // 2. Fall back to Firestore (when online)
     try {
       final recents = await _sosRepo.getRecentSos(uid, limit: 1);
       if (recents.isNotEmpty) {
         final latest = recents.first;
         if (latest.status == SosStatus.active && latest.resolvedAt == null) {
           debugPrint(
-            'ℹ️ SosEscalationProvider: Found active SOS record in Firestore (${latest.id}). Resuming...',
+            'â„¹ï¸ SosEscalationProvider: Found active SOS record in Firestore (${latest.id}). Resuming...',
           );
           return resumeActiveSession(latest);
         }
       }
     } catch (e) {
-      debugPrint('⚠️ SosEscalationProvider.checkAndResumeActiveSession failed: $e');
+      debugPrint('âš ï¸ SosEscalationProvider.checkAndResumeActiveSession Firestore failed: $e');
     }
     return null;
   }
@@ -307,7 +355,7 @@ class SosEscalationProvider extends ChangeNotifier {
             DateTime.now().difference(_safetyCheckOpenedAt!).inSeconds;
         if (pendingSeconds >= safetyCheckTimeoutSeconds) {
           debugPrint(
-            '🚨 SosEscalationProvider: Safety check timed out after ${safetyCheckTimeoutSeconds}s. Treating as in danger.',
+            'ðŸš¨ SosEscalationProvider: Safety check timed out after ${safetyCheckTimeoutSeconds}s. Treating as in danger.',
           );
           _safetyCheckOpenedAt = null;
           confirmStillInDanger();
@@ -329,7 +377,7 @@ class SosEscalationProvider extends ChangeNotifier {
       if (!_isSafetyCheckPending &&
           _pendingEscalationPriority != ContactPriority.medium) {
         debugPrint(
-          '🚨 SosEscalationProvider: T=4m reached. Safety check for Medium priority.',
+          'ðŸš¨ SosEscalationProvider: T=4m reached. Safety check for Medium priority.',
         );
         _isSafetyCheckPending = true;
         _safetyCheckOpenedAt = DateTime.now();
@@ -342,7 +390,7 @@ class SosEscalationProvider extends ChangeNotifier {
       if (!_isSafetyCheckPending &&
           _pendingEscalationPriority != ContactPriority.low) {
         debugPrint(
-          '🚨 SosEscalationProvider: T=8m reached. Safety check for Low priority.',
+          'ðŸš¨ SosEscalationProvider: T=8m reached. Safety check for Low priority.',
         );
         _isSafetyCheckPending = true;
         _safetyCheckOpenedAt = DateTime.now();
@@ -355,13 +403,13 @@ class SosEscalationProvider extends ChangeNotifier {
         !session.policeConfirmationPending &&
         session.policeCallAuthorized == null) {
       debugPrint(
-        '🚨 SosEscalationProvider: T=12m reached. Police confirmation pending.',
+        'ðŸš¨ SosEscalationProvider: T=12m reached. Police confirmation pending.',
       );
       session.policeConfirmationPending = true;
     }
   }
 
-  // ── Auto-SMS Dispatch ───────────────────────────────────────────────────────
+  // â”€â”€ Auto-SMS Dispatch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /// Sends emergency SMS to all contacts of the given [priority] level.
   ///
@@ -375,13 +423,13 @@ class SosEscalationProvider extends ChangeNotifier {
     if (_contacts.isEmpty) {
       try {
         debugPrint(
-          'ℹ️ SosEscalationProvider: Local contacts list empty. Querying ContactRepository for uid: ${session.userId}...',
+          'â„¹ï¸ SosEscalationProvider: Local contacts list empty. Querying ContactRepository for uid: ${session.userId}...',
         );
         final repo = _contactRepo ?? ContactRepository();
         _contacts = await repo.getContacts(session.userId);
       } catch (e) {
         debugPrint(
-          '⚠️ SosEscalationProvider: Failed to fetch contacts from repo: $e',
+          'âš ï¸ SosEscalationProvider: Failed to fetch contacts from repo: $e',
         );
       }
     }
@@ -393,7 +441,7 @@ class SosEscalationProvider extends ChangeNotifier {
     session.alertedPriorities.add(priority);
 
     if (contactsForPriority.isEmpty) {
-      debugPrint('ℹ️ SosEscalationProvider: No ${priority.displayLabel} contacts to SMS.');
+      debugPrint('â„¹ï¸ SosEscalationProvider: No ${priority.displayLabel} contacts to SMS.');
       return;
     }
 
@@ -414,7 +462,7 @@ class SosEscalationProvider extends ChangeNotifier {
 
       // Skip if already alerted in this session (duplicate prevention across tiers)
       if (session.alertedContactPhones.contains(normalizedPhone)) {
-        debugPrint('ℹ️ SosEscalationProvider: Skipping ${contact.name} (already alerted).');
+        debugPrint('â„¹ï¸ SosEscalationProvider: Skipping ${contact.name} (already alerted).');
         results.add(SmsSendResult(
           phone: normalizedPhone,
           contactName: contact.name,
@@ -439,9 +487,9 @@ class SosEscalationProvider extends ChangeNotifier {
 
       if (result.result == SmsResult.sent) {
         session.alertedContactPhones.add(normalizedPhone);
-        debugPrint('✅ SosEscalationProvider: SMS sent to ${contact.name} ($normalizedPhone)');
+        debugPrint('âœ… SosEscalationProvider: SMS sent to ${contact.name} ($normalizedPhone)');
       } else {
-        debugPrint('⚠️ SosEscalationProvider: SMS to ${contact.name} failed: ${result.error}');
+        debugPrint('âš ï¸ SosEscalationProvider: SMS to ${contact.name} failed: ${result.error}');
       }
     }
 
@@ -464,7 +512,7 @@ class SosEscalationProvider extends ChangeNotifier {
             'Emergency SMS sent to $sentCount/$totalCount ${priority.displayLabel} contacts.',
       );
     } catch (e) {
-      debugPrint('⚠️ SosEscalationProvider: Activity log failed: $e');
+      debugPrint('âš ï¸ SosEscalationProvider: Activity log failed: $e');
     }
   }
 
@@ -476,11 +524,11 @@ class SosEscalationProvider extends ChangeNotifier {
       );
       await _sosRepo.updateSmsResults(session.sosDocId, firestoreMap);
     } catch (e) {
-      debugPrint('⚠️ SosEscalationProvider: Failed to persist SMS results: $e');
+      debugPrint('âš ï¸ SosEscalationProvider: Failed to persist SMS results: $e');
     }
   }
 
-  // ── Escalation Actions ─────────────────────────────────────────────────────
+  // â”€â”€ Escalation Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /// Confirms that the user is still in danger and executes the pending escalation tier.
   ///
@@ -522,7 +570,7 @@ class SosEscalationProvider extends ChangeNotifier {
         description: 'SOS escalated to ${priority.displayLabel}.',
       );
     } catch (e) {
-      debugPrint('⚠️ SosEscalationProvider.escalateTo Firestore update failed: $e');
+      debugPrint('âš ï¸ SosEscalationProvider.escalateTo Firestore update failed: $e');
     }
 
     notifyListeners();
@@ -531,9 +579,9 @@ class SosEscalationProvider extends ChangeNotifier {
     await _autoSendSms(priority);
   }
 
-  // ── Police Confirmation ─────────────────────────────────────────────────────
+  // â”€â”€ Police Confirmation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  /// Records that the user authorized calling police/112.
+  /// Records that the user authorized calling police/100.
   Future<void> authorizePoliceCall() async {
     final session = _activeSession;
     if (session == null) return;
@@ -550,10 +598,10 @@ class SosEscalationProvider extends ChangeNotifier {
       await _activityRepo.logActivity(
         uid: session.userId,
         type: ActivityLogType.locationShared,
-        description: 'User authorized calling emergency police/112.',
+        description: 'User authorized calling emergency police/100.',
       );
     } catch (e) {
-      debugPrint('⚠️ SosEscalationProvider.authorizePoliceCall failed: $e');
+      debugPrint('âš ï¸ SosEscalationProvider.authorizePoliceCall failed: $e');
     }
   }
 
@@ -572,14 +620,14 @@ class SosEscalationProvider extends ChangeNotifier {
         authorized: false,
       );
     } catch (e) {
-      debugPrint('⚠️ SosEscalationProvider.declinePoliceCall failed: $e');
+      debugPrint('âš ï¸ SosEscalationProvider.declinePoliceCall failed: $e');
     }
 
-    // Declining police = user is safe → resolve
+    // Declining police = user is safe â†’ resolve
     await resolveEmergency();
   }
 
-  // ── Resolution ──────────────────────────────────────────────────────────────
+  // â”€â”€ Resolution â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /// Marks the active emergency as resolved and cancels all escalation timers.
   Future<bool> resolveEmergency() async {
@@ -604,7 +652,7 @@ class SosEscalationProvider extends ChangeNotifier {
       );
       return true;
     } catch (e) {
-      debugPrint('⚠️ SosEscalationProvider.resolveEmergency Firestore update failed: $e');
+      debugPrint('âš ï¸ SosEscalationProvider.resolveEmergency Firestore update failed: $e');
       return false;
     }
   }

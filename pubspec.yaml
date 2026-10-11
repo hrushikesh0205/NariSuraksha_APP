@@ -39,11 +39,21 @@ dependencies:
   internet_connection_checker_plus: ^3.1.1
   speech_to_text: ^7.4.0
 
+  # ── Local Database (Offline Emergency Support) ───────────────────────────────
+  # Drift: type-safe SQLite ORM for critical offline data storage.
+  # Used for: emergency contacts cache, active SOS session, pending SOS history.
+  drift: ^2.26.1
+  sqlite3_flutter_libs: ^0.5.24
+  path_provider: ^2.1.5
+  path: ^1.9.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.14.3
+  drift_dev: ^2.26.1
+  build_runner: ^2.4.15
 
 flutter:
   uses-material-design: true

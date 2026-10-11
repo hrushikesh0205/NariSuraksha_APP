@@ -1,4 +1,5 @@
-import 'dart:async';
+﻿import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:nari_suraksha/core/services/auth_service.dart';
@@ -9,12 +10,13 @@ import 'package:nari_suraksha/models/activity_log_model.dart';
 import 'package:nari_suraksha/models/sos_record_model.dart';
 import 'package:nari_suraksha/providers/user_provider.dart';
 import 'package:nari_suraksha/repositories/activity_repository.dart';
+import 'package:nari_suraksha/repositories/local_sos_repository.dart';
 import 'package:nari_suraksha/repositories/sos_repository.dart';
 import 'package:geolocator/geolocator.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // SafetyStatus
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /// Snapshot of device safety / connectivity status shown in the status card.
 class SafetyStatus {
@@ -40,18 +42,18 @@ class SafetyStatus {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // DashboardProvider
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /// Central state container for the Home Dashboard screen.
 ///
 /// Manages:
-/// - [SafetyStatus] — real GPS, permission, and internet state.
+/// - [SafetyStatus] â€” real GPS, permission, and internet state.
 ///   Auto-updates via a [ConnectivityService.onConnectivityChanged] stream
 ///   so the status card reacts within seconds of WiFi being toggled.
 /// - Recent activity logs via real-time Firestore stream.
-/// - SOS trigger flow (location → Firestore write → activity log).
+/// - SOS trigger flow (location â†’ Firestore write â†’ activity log).
 /// - Loading / error states for each section independently.
 class DashboardProvider extends ChangeNotifier {
   DashboardProvider({
@@ -62,12 +64,14 @@ class DashboardProvider extends ChangeNotifier {
     ActivityRepository? activityRepository,
     SmsService? smsService,
     UserProvider? userProvider,
+    LocalSosRepository? localSosRepository,
   })  : _locationService = locationService ?? LocationService(),
         _connectivityService = connectivityService ?? ConnectivityService(),
         _authService = authService ?? AuthService(),
         _sosRepository = sosRepository ?? SosRepository(),
         _activityRepository = activityRepository ?? ActivityRepository(),
         _smsService = smsService ?? const SmsService(),
+        _localSosRepository = localSosRepository ?? LocalSosRepository(),
         _userProvider = userProvider;
 
   final LocationService _locationService;
@@ -76,9 +80,10 @@ class DashboardProvider extends ChangeNotifier {
   final SosRepository _sosRepository;
   final ActivityRepository _activityRepository;
   final SmsService _smsService;
+  final LocalSosRepository _localSosRepository;
   final UserProvider? _userProvider;
 
-  // ── State ──────────────────────────────────────────────────────────────────
+  // â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   SafetyStatus _safetyStatus = SafetyStatus.unknown;
   List<ActivityLogModel> _recentAlerts = [];
@@ -90,7 +95,7 @@ class DashboardProvider extends ChangeNotifier {
   /// Real-time subscription for recent activity logs.
   StreamSubscription<List<ActivityLogModel>>? _alertsSub;
 
-  /// Live connectivity subscription — auto-refreshes safety status on change.
+  /// Live connectivity subscription â€” auto-refreshes safety status on change.
   StreamSubscription<bool>? _connectivitySub;
 
   SafetyStatus get safetyStatus => _safetyStatus;
@@ -100,7 +105,7 @@ class DashboardProvider extends ChangeNotifier {
   String? get sosErrorMessage => _sosErrorMessage;
   String? get alertsErrorMessage => _alertsErrorMessage;
 
-  // ── Computed stats ─────────────────────────────────────────────────────────
+  // â”€â”€ Computed stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /// Number of SOS events in the current recent-alert window.
   int get sosCount =>
@@ -116,7 +121,7 @@ class DashboardProvider extends ChangeNotifier {
   /// Whether the device currently has internet connectivity.
   bool get isConnected => _safetyStatus.isConnected;
 
-  // ── Initialization ─────────────────────────────────────────────────────────
+  // â”€â”€ Initialization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /// Called once when the Dashboard mounts.
   ///
@@ -141,7 +146,7 @@ class DashboardProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── Safety Status ──────────────────────────────────────────────────────────
+  // â”€â”€ Safety Status â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   Future<void> _refreshSafetyStatus() async {
     try {
@@ -164,7 +169,7 @@ class DashboardProvider extends ChangeNotifier {
 
   Future<void> refreshSafetyStatus() => _refreshSafetyStatus();
 
-  // ── Live connectivity subscription ─────────────────────────────────────────
+  // â”€â”€ Live connectivity subscription â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /// Subscribes to connectivity changes. When connectivity toggles,
   /// immediately re-checks the full safety status so the card stays accurate.
@@ -178,9 +183,12 @@ class DashboardProvider extends ChangeNotifier {
     });
   }
 
-  // ── SOS Trigger ────────────────────────────────────────────────────────────
+  // â”€â”€ SOS Trigger â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  /// Full SOS flow: get location → write Firestore → log activity.
+  /// Full SOS flow: get location â†’ write Firestore (or local DB if offline) â†’ log activity.
+  ///
+  /// **Offline Behavior**: If no internet, saves to local SQLite DB as PENDING_SYNC.
+  /// The [SyncService] will upload to Firestore when connectivity returns.
   ///
   /// Accepts an optional [triggerSource] (e.g. `'Voice SOS'`) for the activity log.
   /// Returns a [SosTriggerResult] describing success or the error.
@@ -195,75 +203,137 @@ class DashboardProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // 1. One Active Session Rule: Check if an active, unresolved SOS already exists
-      try {
-        final recents = await _sosRepository.getRecentSos(uid, limit: 1);
-        if (recents.isNotEmpty) {
-          final active = recents.first;
-          if (active.status == SosStatus.active && active.resolvedAt == null) {
-            debugPrint(
-              'ℹ️ DashboardProvider: Active SOS (${active.id}) already in progress. Reusing without creating duplicate.',
-            );
-            return SosTriggerResult.success(
-              active.latitude,
-              active.longitude,
-              docId: active.id,
-            );
+      // â”€â”€ Check connectivity â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      final isOnline = await _connectivityService.isConnected();
+
+      if (isOnline) {
+        // â”€â”€ ONLINE PATH â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+        // 1. One Active Session Rule
+        try {
+          final recents = await _sosRepository.getRecentSos(uid, limit: 1);
+          if (recents.isNotEmpty) {
+            final active = recents.first;
+            if (active.status == SosStatus.active && active.resolvedAt == null) {
+              debugPrint(
+                'â„¹ï¸ DashboardProvider: Active SOS (${active.id}) already in progress. Reusing.',
+              );
+              return SosTriggerResult.success(
+                active.latitude,
+                active.longitude,
+                docId: active.id,
+              );
+            }
           }
+        } catch (e) {
+          debugPrint('âš ï¸ DashboardProvider: check existing active SOS failed: $e');
         }
-      } catch (e) {
-        debugPrint('⚠️ DashboardProvider: check existing active SOS failed: $e');
-      }
 
-      // Proactively check/request SMS permission
-      try {
-        final perm = await _smsService.checkSmsPermission();
-        if (!perm['granted']!) {
-          await _smsService.requestSmsPermission();
+        // 2. Proactively check/request SMS permission
+        try {
+          final perm = await _smsService.checkSmsPermission();
+          if (!perm['granted']!) await _smsService.requestSmsPermission();
+        } catch (_) {}
+
+        // 3. Get location (allow fallback to last-known if fresh fix times out)
+        Position? position;
+        try {
+          position = await _locationService.getCurrentPosition();
+        } catch (e) {
+          debugPrint('âš ï¸ DashboardProvider: fresh location failed, trying last-known: $e');
+          position = await _locationService.getLastKnownPosition();
         }
-      } catch (_) {}
+        final lat = position?.latitude ?? 0.0;
+        final lng = position?.longitude ?? 0.0;
 
-      // 2. Get location (allow fallback to last-known if fresh fix times out)
-      Position? position;
-      try {
-        position = await _locationService.getCurrentPosition();
-      } catch (e) {
-        debugPrint(
-          '⚠️ DashboardProvider: fresh location failed, trying last-known: $e',
+        // 4. Write SOS record to Firestore
+        final record = SosRecordModel(
+          userId: uid,
+          latitude: lat,
+          longitude: lng,
+          timestamp: DateTime.now(),
+          status: SosStatus.active,
+          escalationLevel: 'high',
+          highAlertedAt: DateTime.now(),
         );
-        position = await _locationService.getLastKnownPosition();
+        final docId = await _sosRepository.createSosRecord(record);
+
+        // 5. Also save to local DB as backup (synced status)
+        final localId = _generateUuid();
+        unawaited(_localSosRepository.insertHistoryRecord(
+          localId: localId,
+          userId: uid,
+          latitude: lat,
+          longitude: lng,
+          startedAt: record.timestamp,
+          triggerSource: triggerSource,
+        ));
+        unawaited(_localSosRepository.markHistorySynced(localId, docId));
+
+        // 6. Log activity for Recent Alerts feed
+        await _activityRepository.logActivity(
+          uid: uid,
+          type: ActivityLogType.sosActivated,
+          description: position != null
+              ? '$triggerSource triggered at (${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)})'
+              : '$triggerSource triggered â€” location unavailable',
+        );
+
+        unawaited(_refreshSafetyStatus());
+        return SosTriggerResult.success(lat, lng, docId: docId);
+      } else {
+        // â”€â”€ OFFLINE PATH â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        debugPrint('ðŸ“´ DashboardProvider: OFFLINE â€” saving SOS to local DB');
+
+        // 1. Proactively check/request SMS permission (works offline)
+        try {
+          final perm = await _smsService.checkSmsPermission();
+          if (!perm['granted']!) await _smsService.requestSmsPermission();
+        } catch (_) {}
+
+        // 2. Get GPS location (works offline â€” no internet needed)
+        Position? position;
+        try {
+          position = await _locationService.getCurrentPosition();
+        } catch (e) {
+          debugPrint('âš ï¸ DashboardProvider [offline]: location failed: $e');
+          position = await _locationService.getLastKnownPosition();
+        }
+        final lat = position?.latitude ?? 0.0;
+        final lng = position?.longitude ?? 0.0;
+        final now = DateTime.now();
+
+        // 3. Generate stable local UUID â€” becomes the Firestore doc ID on sync
+        final localId = _generateUuid();
+
+        // 4. Save SOS history record as PENDING_SYNC
+        await _localSosRepository.insertHistoryRecord(
+          localId: localId,
+          userId: uid,
+          latitude: lat,
+          longitude: lng,
+          startedAt: now,
+          triggerSource: triggerSource,
+          status: 'active',
+          escalationLevel: 'high',
+        );
+
+        // 5. Save as active session so escalation can resume after app restart
+        await _localSosRepository.saveActiveSession(
+          sosDocId: localId,
+          userId: uid,
+          latitude: lat,
+          longitude: lng,
+          startedAt: now,
+          currentLevel: 'high',
+          triggerSource: triggerSource,
+          syncStatus: 'pending',
+        );
+
+        debugPrint('âœ… DashboardProvider [offline]: SOS saved locally as $localId');
+        unawaited(_refreshSafetyStatus());
+        return SosTriggerResult.success(lat, lng, docId: localId);
       }
-
-      final lat = position?.latitude ?? 0.0;
-      final lng = position?.longitude ?? 0.0;
-
-      // 2. Write SOS record to Firestore
-      final record = SosRecordModel(
-        userId: uid,
-        latitude: lat,
-        longitude: lng,
-        timestamp: DateTime.now(),
-        status: SosStatus.active,
-        escalationLevel: 'high',
-        highAlertedAt: DateTime.now(),
-      );
-      final docId = await _sosRepository.createSosRecord(record);
-
-      // 3. Log activity for Recent Alerts feed
-      await _activityRepository.logActivity(
-        uid: uid,
-        type: ActivityLogType.sosActivated,
-        description: position != null
-            ? '$triggerSource triggered at (${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)})'
-            : '$triggerSource triggered — location unavailable',
-      );
-
-      // Refresh safety status after SOS so location permission state updates.
-      unawaited(_refreshSafetyStatus());
-
-      // Stream will auto-update recent alerts — no manual reload needed.
-
-      return SosTriggerResult.success(lat, lng, docId: docId);
     } catch (e) {
       final msg = _friendlyError(e);
       _sosErrorMessage = msg;
@@ -275,7 +345,17 @@ class DashboardProvider extends ChangeNotifier {
     }
   }
 
-  // ── Recent Alerts — real-time stream ───────────────────────────────────────
+  /// Generates a UUID v4 for offline SOS record identification.
+  String _generateUuid() {
+    final rng = Random.secure();
+    final bytes = List<int>.generate(16, (_) => rng.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+  }
+
+  // â”€â”€ Recent Alerts â€” real-time stream â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   void _subscribeToAlerts([String? explicitUid]) {
     final uid = explicitUid ??
@@ -309,7 +389,7 @@ class DashboardProvider extends ChangeNotifier {
   /// Force-restarts the real-time alert subscription (e.g. after retry tap).
   void refreshAlerts([String? uid]) => _subscribeToAlerts(uid);
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   String _friendlyError(Object e) {
     final msg = e.toString().toLowerCase();
@@ -339,9 +419,9 @@ class DashboardProvider extends ChangeNotifier {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // SosTriggerResult
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /// Result of a [DashboardProvider.triggerSos] call.
 sealed class SosTriggerResult {

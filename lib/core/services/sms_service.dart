@@ -103,7 +103,7 @@ $mapsUrl
 
 ⏰ Time: $timeStr
 
-Please contact them immediately or call emergency services (Police: 112, Ambulance: 108) if required.
+Please contact them immediately or call emergency services (Police: 100, Ambulance: 108) if required.
 
 – Sent via Nari Suraksha Safety App''';
   }

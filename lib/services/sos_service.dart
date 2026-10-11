@@ -23,7 +23,7 @@ abstract final class SosService {
 
   /// Shown when the "Call Police" quick action is tapped.
   static const String callPoliceMessage =
-      '📞 Launching native phone dialer: Calling 112/100...';
+      '📞 Launching native phone dialer: Calling 100...';
 
   /// Shown when the "Contacts" quick action is tapped.
   static const String openContactsMessage =

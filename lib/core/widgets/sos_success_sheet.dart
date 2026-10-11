@@ -777,7 +777,7 @@ class _SosSuccessSheetState extends State<SosSuccessSheet> {
 
                       // T=12m Police
                       _buildTimelineRow(
-                        title: 'Police 112 (T=12m)',
+                        title: 'Police 100 (T=12m)',
                         status: session?.policeCallAuthorized == true
                             ? 'Authorized'
                             : (policeCountdown <= 0 ? 'Pending Choice' : _formatCountdown(policeCountdown)),

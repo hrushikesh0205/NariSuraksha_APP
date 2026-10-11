@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
@@ -6,10 +6,11 @@ import 'package:nari_suraksha/models/activity_log_model.dart';
 import 'package:nari_suraksha/models/contact_model.dart';
 import 'package:nari_suraksha/repositories/activity_repository.dart';
 import 'package:nari_suraksha/repositories/contact_repository.dart';
+import 'package:nari_suraksha/repositories/local_contact_repository.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // ContactProvider
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /// Manages the list of emergency contacts for the authenticated user.
 ///
@@ -20,13 +21,16 @@ class ContactProvider extends ChangeNotifier {
   ContactProvider({
     ContactRepository? contactRepository,
     ActivityRepository? activityRepository,
+    LocalContactRepository? localContactRepository,
   })  : _contactRepo = contactRepository ?? ContactRepository(),
-        _activityRepo = activityRepository ?? ActivityRepository();
+        _activityRepo = activityRepository ?? ActivityRepository(),
+        _localContactRepo = localContactRepository ?? LocalContactRepository();
 
   final ContactRepository _contactRepo;
   final ActivityRepository _activityRepo;
+  final LocalContactRepository _localContactRepo;
 
-  // ── State ───────────────────────────────────────────────────────────────────
+  // â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   List<EmergencyContact> _contacts = [];
   bool _isLoading = false;
@@ -35,13 +39,13 @@ class ContactProvider extends ChangeNotifier {
   StreamSubscription<List<EmergencyContact>>? _sub;
   String? _currentUid;
 
-  /// IDs of contacts currently being deleted — used to:
+  /// IDs of contacts currently being deleted â€” used to:
   ///   1. Show a "deleting" indicator in the UI.
   ///   2. Filter these contacts from stream updates so a stale
   ///      Firestore cache snapshot does NOT re-add them.
   final Set<String> _deletingIds = {};
 
-  // ── Getters ─────────────────────────────────────────────────────────────────
+  // â”€â”€ Getters â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   List<EmergencyContact> get contacts => List.unmodifiable(_contacts);
   int get count => _contacts.length;
@@ -70,11 +74,11 @@ class ContactProvider extends ChangeNotifier {
   List<EmergencyContact> contactsByPriority(ContactPriority priority) =>
       _contacts.where((c) => c.priority == priority).toList();
 
-  // ── Subscription ────────────────────────────────────────────────────────────
+  // â”€â”€ Subscription â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /// Starts listening to the contact stream for [uid].
   ///
-  /// Safe to call multiple times — only subscribes once per uid.
+  /// Safe to call multiple times â€” only subscribes once per uid.
   void subscribe(String uid) {
     debugPrint('[ContactProvider] subscribe called for uid: $uid');
     if (_currentUid == uid && _sub != null) return;
@@ -86,32 +90,57 @@ class ContactProvider extends ChangeNotifier {
     _sub?.cancel();
     _sub = _contactRepo.watchContacts(uid).listen(
       (list) {
-        debugPrint('📥 [PROVIDER STREAM LISTENER]');
+        debugPrint('ðŸ“¥ [PROVIDER STREAM LISTENER]');
         debugPrint('   7. ContactProvider received ${list.length} contacts from stream for uid: $uid');
         debugPrint('      - Deleting IDs currently tracked: $_deletingIds');
         for (final c in list) {
-          debugPrint('      • [${c.id}] name: "${c.name}", phone: "${c.phone}", userId: "${c.userId}", priority: ${c.priority.name}');
+          debugPrint('      â€¢ [${c.id}] name: "${c.name}", phone: "${c.phone}", userId: "${c.userId}", priority: ${c.priority.name}');
         }
-        // Filter out any contacts that are currently being deleted to prevent
-        // stale Firestore cache snapshots from re-adding them.
+        // Filter out any contacts that are currently being deleted
         if (_deletingIds.isNotEmpty) {
           _contacts = list.where((c) => !_deletingIds.contains(c.id)).toList();
-          debugPrint('   → Filtered ${_deletingIds.length} deleting contact(s). UI active contacts count: ${_contacts.length}');
         } else {
           _contacts = list;
-          debugPrint('   → No active deletions. UI active contacts count: ${_contacts.length}');
         }
         _isLoading = false;
         _errorMessage = null;
         notifyListeners();
+
+        // Cache to local DB for offline use (fire-and-forget)
+        _localContactRepo.replaceAll(uid, list);
       },
       onError: (Object e) {
-        debugPrint('🔥 [PROVIDER STREAM ERROR] Error in watchContacts stream: $e');
+        debugPrint('ðŸ”¥ [PROVIDER STREAM ERROR] Error in watchContacts stream: $e');
         _isLoading = false;
         _errorMessage = _friendlyError(e);
         notifyListeners();
+
+        // Fallback: load from local SQLite DB when offline
+        _loadContactsFromLocal(uid);
       },
     );
+  }
+
+  /// Loads contacts from local SQLite DB as offline fallback.
+  Future<void> _loadContactsFromLocal(String uid) async {
+    try {
+      final localContacts = await _localContactRepo.getContactsForUser(uid);
+      if (localContacts.isNotEmpty) {
+        debugPrint(
+            'ðŸ“¦ ContactProvider: loaded ${localContacts.length} contacts from local DB (offline)');
+        if (_deletingIds.isNotEmpty) {
+          _contacts = localContacts
+              .where((c) => !_deletingIds.contains(c.id))
+              .toList();
+        } else {
+          _contacts = localContacts;
+        }
+        _errorMessage = null;
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('âš ï¸ ContactProvider._loadContactsFromLocal error: $e');
+    }
   }
 
   /// Cancels the Firestore stream.
@@ -126,7 +155,7 @@ class ContactProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── CREATE ──────────────────────────────────────────────────────────────────
+  // â”€â”€ CREATE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /// Adds a new contact to Firestore.
   ///
@@ -167,7 +196,7 @@ class ContactProvider extends ChangeNotifier {
     }
   }
 
-  // ── UPDATE ──────────────────────────────────────────────────────────────────
+  // â”€â”€ UPDATE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /// Updates an existing contact.
   ///
@@ -196,11 +225,11 @@ class ContactProvider extends ChangeNotifier {
     }
   }
 
-  // ── DELETE ──────────────────────────────────────────────────────────────────
+  // â”€â”€ DELETE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /// Permanently deletes a contact from Firestore.
   ///
-  /// The contact is removed from the UI via the Firestore stream — this method
+  /// The contact is removed from the UI via the Firestore stream â€” this method
   /// does NOT do an optimistic local removal, which previously caused a race
   /// condition where the stream would re-add the deleted contact from cache.
   ///
@@ -210,8 +239,8 @@ class ContactProvider extends ChangeNotifier {
     required EmergencyContact contact,
   }) async {
     final id = contact.id;
-    debugPrint('══════════════════════════════════════════════════════════');
-    debugPrint('👉 [PROVIDER: deleteContact CALLED]');
+    debugPrint('â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•');
+    debugPrint('ðŸ‘‰ [PROVIDER: deleteContact CALLED]');
     debugPrint('   Target UID: $uid');
     debugPrint('   Contact ID: $id');
     debugPrint('   Contact Name: "${contact.name}"');
@@ -221,7 +250,7 @@ class ContactProvider extends ChangeNotifier {
     debugPrint('   Contacts list count before delete: ${_contacts.length}');
 
     if (id == null || id.isEmpty) {
-      debugPrint('❌ [PROVIDER: deleteContact FAILED] contact.id is null or empty!');
+      debugPrint('âŒ [PROVIDER: deleteContact FAILED] contact.id is null or empty!');
       return 'Cannot delete contact: missing contact ID.';
     }
 
@@ -234,7 +263,7 @@ class ContactProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      debugPrint('⏳ [PROVIDER: deleteContact] Delegating to _contactRepo.deleteContact(uid: $uid, contactId: $id)...');
+      debugPrint('â³ [PROVIDER: deleteContact] Delegating to _contactRepo.deleteContact(uid: $uid, contactId: $id)...');
       await _contactRepo.deleteContact(uid, id);
 
       // Log activity
@@ -244,10 +273,10 @@ class ContactProvider extends ChangeNotifier {
         description: 'Emergency contact "${contact.name}" was removed.',
       );
 
-      debugPrint('✅ [PROVIDER: deleteContact] Deletion succeeded. Remaining active local contacts: ${_contacts.length}');
+      debugPrint('âœ… [PROVIDER: deleteContact] Deletion succeeded. Remaining active local contacts: ${_contacts.length}');
       return null;
     } catch (e) {
-      debugPrint('❌ [PROVIDER: deleteContact] Deletion threw error: $e');
+      debugPrint('âŒ [PROVIDER: deleteContact] Deletion threw error: $e');
       final errorMsg = _friendlyError(e);
       _errorMessage = errorMsg;
       // Revert local removal since deletion failed
@@ -264,18 +293,18 @@ class ContactProvider extends ChangeNotifier {
         _deletingIds.remove(id);
       });
       notifyListeners();
-      debugPrint('══════════════════════════════════════════════════════════');
+      debugPrint('â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•');
     }
   }
 
-  // ── Helpers ─────────────────────────────────────────────────────────────────
+  // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   String _friendlyError(Object e) {
-    debugPrint('🔥 [ContactProvider] _friendlyError raw: $e');
+    debugPrint('ðŸ”¥ [ContactProvider] _friendlyError raw: $e');
 
-    // ── Handle Firestore-specific error codes directly ──────────────────────
+    // â”€â”€ Handle Firestore-specific error codes directly â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (e is FirebaseException) {
-      debugPrint('🔥 [ContactProvider] FirebaseException code: ${e.code}, message: ${e.message}');
+      debugPrint('ðŸ”¥ [ContactProvider] FirebaseException code: ${e.code}, message: ${e.message}');
       switch (e.code) {
         case 'unauthenticated':
           return 'You are not signed in. Please sign in again.';
@@ -293,10 +322,10 @@ class ContactProvider extends ChangeNotifier {
       }
     }
 
-    // ── String-based fallback for wrapped/rethrown errors ───────────────────
+    // â”€â”€ String-based fallback for wrapped/rethrown errors â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     final msg = e.toString();
     final lower = msg.toLowerCase();
-    debugPrint('🔥 [ContactProvider] _friendlyError fallback mapping: $lower');
+    debugPrint('ðŸ”¥ [ContactProvider] _friendlyError fallback mapping: $lower');
     if (lower.contains('unauthenticated') || lower.contains('not signed in')) {
       return 'You are not signed in. Please sign in again.';
     }

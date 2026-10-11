@@ -224,12 +224,12 @@ void main() {
       expect(sosMsg, contains('URGENT: Nari Suraksha SOS – High Priority Alert'));
       expect(sosMsg, contains('Aarti may be in danger'));
       expect(sosMsg, contains('https://www.google.com/maps/search/?api=1&query=18.5204,73.8567'));
-      expect(sosMsg, contains('Police: 112'));
+      expect(sosMsg, contains('Police: 100'));
 
       final quickMsg = smsService.buildQuickAlertMessage();
       expect(quickMsg, contains('🚨 Nari Suraksha Alert:'));
       expect(quickMsg, isNot(contains('URGENT: Nari Suraksha SOS')));
-      expect(quickMsg, isNot(contains('Police: 112')));
+      expect(quickMsg, isNot(contains('Police: 100')));
     });
 
     test('Medium and Low SOS priority escalation messages remain intact', () {

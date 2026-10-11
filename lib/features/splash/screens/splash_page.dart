@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -195,6 +196,20 @@ class _SplashPageState extends State<SplashPage>
 
   void _navigateNext() {
     if (!mounted) return;
+    // Persistent Login: check if user is already authenticated.
+    // FirebaseAuth caches credentials locally — works even after phone restart.
+    // Wrapped in try-catch: FirebaseAuth.instance throws in test environments.
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser != null) {
+        // User is already logged in — skip onboarding and go straight to home.
+        Navigator.of(context).pushReplacementNamed(AppRoutes.home);
+        return;
+      }
+    } catch (_) {
+      // Firebase not initialized (e.g. in test) — fall through to onboarding.
+    }
+    // No cached session — go to onboarding flow.
     Navigator.of(context).pushReplacementNamed(AppRoutes.onboarding);
   }
 

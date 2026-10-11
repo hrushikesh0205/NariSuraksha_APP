@@ -1,8 +1,9 @@
-import 'package:flutter/foundation.dart';
+﻿import 'package:flutter/foundation.dart';
 import 'package:nari_suraksha/core/services/auth_service.dart';
 import 'package:nari_suraksha/models/activity_log_model.dart';
 import 'package:nari_suraksha/models/sos_record_model.dart';
 import 'package:nari_suraksha/repositories/activity_repository.dart';
+import 'package:nari_suraksha/repositories/local_sos_repository.dart';
 import 'package:nari_suraksha/repositories/sos_repository.dart';
 
 // -----------------------------------------------------------------------------
@@ -15,13 +16,16 @@ class SosProvider extends ChangeNotifier {
     SosRepository? sosRepository,
     ActivityRepository? activityRepository,
     AuthService? authService,
+    LocalSosRepository? localSosRepository,
   })  : _sosRepository = sosRepository ?? SosRepository(),
         _activityRepository = activityRepository ?? ActivityRepository(),
-        _authService = authService ?? AuthService();
+        _authService = authService ?? AuthService(),
+        _localSosRepository = localSosRepository ?? LocalSosRepository();
 
   final SosRepository _sosRepository;
   final ActivityRepository _activityRepository;
   final AuthService _authService;
+  final LocalSosRepository _localSosRepository;
 
   // -- State ------------------------------------------------------------------
 
@@ -57,12 +61,41 @@ class SosProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      _history = await _sosRepository.getRecentSos(uid, limit: 5);
+      // Attempt Firestore first
+      final firestoreHistory = await _sosRepository.getRecentSos(uid, limit: 5);
+
+      // Also get pending-sync local records not yet in Firestore
+      final localPending = await _localSosRepository.getPendingHistoryRecords(uid);
+      final pendingModels = await _localSosRepository.getHistoryRecords(uid, limit: 5);
+
+      // Merge: Firestore records take precedence; local pending records are appended
+      // if they don't have a corresponding Firestore doc ID yet.
+      final firestoreIds = firestoreHistory.map((r) => r.id).whereType<String>().toSet();
+      final pendingOnly = pendingModels.where((r) {
+        // Only add local pending records not already in Firestore list
+        return localPending.any((p) => p.localId == r.id) &&
+            !firestoreIds.contains(r.id);
+      }).toList();
+
+      final merged = [...firestoreHistory, ...pendingOnly];
+      merged.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      _history = merged.take(5).toList();
       _historyError = null;
     } catch (e, st) {
-      debugPrint('🔥 SosProvider.loadHistory error: $e\n$st');
-      _historyError = _friendlyError(e);
-      _history = [];
+      debugPrint('ðŸ”¥ SosProvider.loadHistory Firestore error: $e\n$st');
+      // Offline fallback: load from local DB
+      try {
+        _history = await _localSosRepository.getHistoryRecords(uid, limit: 5);
+        if (_history.isNotEmpty) {
+          _historyError = null; // Local data available
+          debugPrint('ðŸ“¦ SosProvider: loaded ${_history.length} records from local DB (offline fallback)');
+        } else {
+          _historyError = _friendlyError(e);
+        }
+      } catch (localErr) {
+        _historyError = _friendlyError(e);
+        _history = [];
+      }
     } finally {
       _isLoadingHistory = false;
       notifyListeners();
@@ -120,7 +153,7 @@ class SosProvider extends ChangeNotifier {
       return 'Access denied. Please contact support.';
     }
     if (msg.contains('failed-precondition') || msg.contains('failed_precondition')) {
-      // Usually a missing Firestore index — in-memory sort should prevent this.
+      // Usually a missing Firestore index â€” in-memory sort should prevent this.
       return 'Unable to load history. Please refresh.';
     }
     if (msg.contains('not-found') || msg.contains('no document')) {

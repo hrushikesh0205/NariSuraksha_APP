@@ -13,10 +13,10 @@ import 'package:nari_suraksha/providers/sos_escalation_provider.dart';
 ///
 /// Shown after all contact tiers (High → Medium → Low) have been alerted and the
 /// SOS is still unresolved.  Gives the user a clear choice to either:
-///   1. Call Police / Emergency Services (112) — opens dialer with 112 pre-filled.
+///   1. Call Police (100) — opens dialer with 100 pre-filled.
 ///   2. Confirm they are safe — resolves the SOS immediately.
 ///
-/// **NEVER** auto-dials 112; the user must explicitly confirm.
+/// **NEVER** auto-dials 100; the user must explicitly confirm.
 class PoliceConfirmationSheet extends StatelessWidget {
   const PoliceConfirmationSheet({
     super.key,
@@ -52,7 +52,7 @@ class PoliceConfirmationSheet extends StatelessWidget {
   }
 
   Future<void> _launchDialer() async {
-    final uri = Uri(scheme: 'tel', path: '112');
+    final uri = Uri(scheme: 'tel', path: '100');
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
     }
@@ -184,7 +184,7 @@ class PoliceConfirmationSheet extends StatelessWidget {
                           ),
                           SizedBox(height: 4),
                           _EscalationStep(
-                            label: 'Police / 112 (T=12m)',
+                            label: 'Police / 100 (T=12m)',
                             isComplete: false,
                             color: AppColors.error,
                             isCurrent: true,
@@ -195,7 +195,7 @@ class PoliceConfirmationSheet extends StatelessWidget {
                     const SizedBox(height: AppSpacing.lg),
 
                     // ── Buttons ──────────────────────────────────────────────
-                    // [ CALL 112 ] - only called when explicitly tapped
+                    // [ CALL 100 ] - only called when explicitly tapped
                     SizedBox(
                       width: double.infinity,
                       height: 54,
@@ -215,7 +215,7 @@ class PoliceConfirmationSheet extends StatelessWidget {
                         ),
                         icon: const Icon(Icons.call_rounded, size: 22),
                         label: const Text(
-                          'CALL 112',
+                          'CALL 100',
                           style: TextStyle(
                               fontWeight: FontWeight.w800,
                               fontSize: 16,
